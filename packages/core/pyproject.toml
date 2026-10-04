@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "drw-core"
+version = "0.1.0"
+description = "DRW scientific core: typed schemas, deterministic numerics, golden models and local execution."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "UNLICENSED" }
+authors = [{ name = "Differential Research Workbench" }]
+dependencies = [
+  "numpy>=1.26",
+  "scipy>=1.11",
+  "pydantic>=2.6",
+  "pyyaml>=6",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8",
+  "jsonschema>=4",
+  "ruff>=0.5",
+]
+
+[project.scripts]
+drw = "drw.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["drw*"]

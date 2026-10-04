@@ -1,0 +1,97 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e "packages/core[dev]"
+      - name: Lint
+        run: ruff check packages/core/src tests scripts
+      - name: Unit, scientific and integration tests
+        run: python -m pytest
+      - name: Demo smoke test
+        run: python -m drw demo --out .drw/demo
+
+  web:
+    name: web / pnpm
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # The web tests execute the real Python bridge, so the core must be installed.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install the Python core
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e "packages/core[dev]"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+      - name: Install
+        run: pnpm install --no-frozen-lockfile
+      - name: Build workspace packages
+        run: pnpm --filter @drw/experiment-spec build
+      - name: Typecheck
+        run: pnpm -r typecheck
+      - name: Test
+        env:
+          DRW_PYTHON: python
+        run: |
+          pnpm --filter @drw/experiment-spec test
+          pnpm --filter @drw/web test
+      - name: Build the web app
+        run: pnpm --filter @drw/web build
+
+  e2e:
+    name: browser e2e (Playwright)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install the Python core
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e "packages/core[dev]"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+      - name: Install
+        run: pnpm install --no-frozen-lockfile
+      - name: Install Chromium
+        run: pnpm --filter @drw/web exec playwright install --with-deps chromium
+      - name: Browser end-to-end
+        env:
+          DRW_PYTHON: python
+        run: pnpm --filter @drw/web e2e

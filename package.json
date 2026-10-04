@@ -1,0 +1,24 @@
+{
+  "name": "drw",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Differential Research Workbench - the experiment operating system for computational research.",
+  "license": "UNLICENSED",
+  "packageManager": "pnpm@11.9.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "typecheck": "pnpm -r typecheck",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "dev:web": "pnpm --filter @drw/web dev",
+    "start:local": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-local.ps1",
+    "test:py": "python -m pytest",
+    "test:web": "pnpm --filter @drw/web test",
+    "lint:py": "ruff check packages/core/src tests scripts",
+    "format:py": "ruff format packages/core/src tests scripts",
+    "schema:export": "python scripts/export_schemas.py",
+    "demo": "python -m drw demo"
+  }
+}

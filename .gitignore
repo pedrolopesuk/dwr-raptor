@@ -1,0 +1,63 @@
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+sdist/
+wheels/
+.venv/
+venv/
+env/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+.tox/
+
+# ---------------------------------------------------------------------------
+# Node / JavaScript
+# ---------------------------------------------------------------------------
+node_modules/
+.pnpm-store/
+*.tsbuildinfo
+.next/
+out/
+.turbo/
+
+# Playwright
+playwright-report/
+test-results/
+blob-report/
+.playwright/
+
+# ---------------------------------------------------------------------------
+# DRW runtime output (generated experiment artifacts)
+# ---------------------------------------------------------------------------
+# Experiment runs, evidence packages and reports are local output, not source.
+.drw/
+artifacts/
+runs/
+*.drw.zip
+
+# ---------------------------------------------------------------------------
+# Secrets / environment
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+
+# ---------------------------------------------------------------------------
+# OS / editors
+# ---------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/

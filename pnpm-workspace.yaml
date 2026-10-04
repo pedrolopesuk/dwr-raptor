@@ -1,0 +1,39 @@
+# pnpm workspace definition for the Differential Research Workbench (DRW).
+#
+# JavaScript/TypeScript packages live under apps/ and packages/. Python packages
+# live under packages/core and are managed by pip/uv, not pnpm (pnpm ignores any
+# directory that has no package.json).
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# pnpm blocks dependency build scripts by default. Decisions:
+#   esbuild -> true: Vitest/Next need its native binary.
+#   Carbon/IBM packages -> false: they ship prebuilt CSS, icons and fonts; their
+#     postinstall scripts are not required for our Next.js build. Approving them
+#     would only add supply-chain surface.
+#   @parcel/watcher -> false: a transitive optional native watcher we do not use.
+allowBuilds:
+  esbuild: true
+  '@carbon/colors': false
+  '@carbon/feature-flags': false
+  '@carbon/grid': false
+  '@carbon/icon-helpers': false
+  '@carbon/icons-react': false
+  '@carbon/layout': false
+  '@carbon/motion': false
+  '@carbon/react': false
+  '@carbon/styles': false
+  '@carbon/themes': false
+  '@carbon/type': false
+  '@carbon/utilities': false
+  '@ibm/plex': false
+  '@ibm/plex-mono': false
+  '@ibm/plex-sans': false
+  '@ibm/plex-sans-arabic': false
+  '@ibm/plex-sans-devanagari': false
+  '@ibm/plex-sans-hebrew': false
+  '@ibm/plex-sans-thai': false
+  '@ibm/plex-sans-thai-looped': false
+  '@ibm/plex-serif': false
+  '@parcel/watcher': false

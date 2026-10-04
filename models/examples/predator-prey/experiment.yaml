@@ -1,0 +1,49 @@
+# DRW example experiment: baseline vs. a +10% perturbation of prey growth.
+#
+# Demonstrates: ODE simulation, parameter variation, baseline/variant delta and
+# relative delta, and a reproducible evidence export.
+name: predator-prey baseline vs +10% prey growth
+hypothesis: >-
+  Increasing the prey intrinsic growth rate alpha by 10% raises the prey peak and
+  changes the predator-prey cycle amplitude.
+
+model_ref:
+  model_id: predator-prey
+  version: "1.0.0"
+
+# Baseline conditions (the frozen reference run). Population/state parameters are
+# initial conditions; the rest are model inputs.
+baseline:
+  alpha: 1.1
+  beta: 0.4
+  delta: 0.1
+  gamma: 0.4
+  prey0: 10.0
+  predator0: 5.0
+
+# One factor, one alternative value: a single variant run.
+factors:
+  - parameter: alpha
+    values: [1.21]
+
+outputs: [prey, predator]
+
+sampling:
+  method: grid
+
+analyses:
+  - method: delta
+  - method: relative_delta
+
+execution:
+  solver: auto
+  timeout_s: 30.0
+  max_runs: 32
+
+verification:
+  rtol: 1.0e-9
+  atol: 1.0e-12
+
+reporting:
+  title: "Predator-prey: +10% prey growth"
+  formats: [json, markdown]

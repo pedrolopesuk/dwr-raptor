@@ -1,0 +1,482 @@
+// Carbon Design System (IBM). One global stylesheet: Carbon supplies every
+// component style; the rules below are layout glue built only from Carbon
+// tokens (CSS custom properties, spacing scale, type styles).
+@use "@carbon/react";
+@use "@carbon/react/scss/spacing" as spacing;
+@use "@carbon/react/scss/type" as type;
+@use "@carbon/react/scss/breakpoint" as bp;
+
+$header-height: 3rem;
+$sidebar-width: 20rem;
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--cds-background);
+  color: var(--cds-text-primary);
+  @include type.type-style("body-01");
+}
+
+// Theme root: paints the whole viewport so g100 never shows a white page.
+.drw-app {
+  min-height: 100vh;
+  background-color: var(--cds-background);
+  color: var(--cds-text-primary);
+}
+
+// Data-vis categorical colours (Carbon data visualization palette), one set per
+// theme so contrast holds in light and dark.
+.drw-app {
+  --drw-series-reference: #6929c4; // purple 70
+  --drw-series-variant: #1192e8; // cyan 50
+  --drw-series-delta: #9f1853; // magenta 70
+}
+
+.cds--g100.drw-app,
+.cds--g100 .drw-app {
+  --drw-series-reference: #a56eff; // purple 50
+  --drw-series-variant: #33b1ff; // cyan 40
+  --drw-series-delta: #ff7eb6; // magenta 40
+}
+
+.cds--skip-to-content:focus {
+  z-index: 9999;
+}
+
+/* ------------------------------------------------------------------ shell */
+
+.drw-shell {
+  display: grid;
+  grid-template-columns: $sidebar-width minmax(0, 1fr);
+  padding-top: $header-height; // clear the fixed UI-shell header
+  min-height: 100vh;
+}
+
+@include bp.breakpoint-down("lg") {
+  .drw-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.drw-sidebar {
+  position: sticky;
+  top: $header-height;
+  align-self: start;
+  height: calc(100vh - #{$header-height});
+  overflow-y: auto;
+  background-color: var(--cds-layer-01);
+  border-inline-end: 1px solid var(--cds-border-subtle-01);
+  display: flex;
+  flex-direction: column;
+}
+
+@include bp.breakpoint-down("lg") {
+  .drw-sidebar {
+    position: static;
+    height: auto;
+    border-inline-end: 0;
+    border-block-end: 1px solid var(--cds-border-subtle-01);
+  }
+}
+
+.drw-sidebar__section {
+  padding: spacing.$spacing-05;
+  border-block-end: 1px solid var(--cds-border-subtle-01);
+}
+
+.drw-sidebar__section--flush {
+  border-block-end: 0;
+  margin: 0;
+}
+
+.drw-fill {
+  width: 100%;
+  max-inline-size: none;
+}
+
+.drw-sidebar__heading {
+  margin: 0 0 spacing.$spacing-04;
+  color: var(--cds-text-secondary);
+  @include type.type-style("label-01");
+  text-transform: uppercase;
+  letter-spacing: 0.32px;
+}
+
+.drw-sidebar__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.drw-experiment {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: spacing.$spacing-03 spacing.$spacing-05;
+  border: 0;
+  border-inline-start: 3px solid transparent;
+  background: transparent;
+  color: var(--cds-text-primary);
+  text-align: start;
+  cursor: pointer;
+  @include type.type-style("body-compact-01");
+
+  &:hover {
+    background-color: var(--cds-layer-hover-01);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--cds-focus);
+    outline-offset: -2px;
+  }
+
+  &[aria-current="true"] {
+    background-color: var(--cds-layer-selected-01);
+    border-inline-start-color: var(--cds-border-interactive);
+  }
+}
+
+.drw-experiment__id {
+  display: block;
+  font-family: var(--cds-font-family-mono, "IBM Plex Mono", monospace);
+  @include type.type-style("code-01");
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drw-experiment__meta {
+  display: block;
+  color: var(--cds-text-secondary);
+  @include type.type-style("helper-text-01");
+}
+
+.drw-main {
+  min-width: 0;
+  padding-block: spacing.$spacing-07 spacing.$spacing-11;
+  padding-inline: spacing.$spacing-05;
+  outline: none;
+}
+
+@include bp.breakpoint-up("md") {
+  .drw-main {
+    padding-inline: spacing.$spacing-07;
+  }
+}
+
+.drw-page {
+  max-width: 82rem;
+  margin-inline: auto;
+}
+
+/* ------------------------------------------------------------ page header */
+
+.drw-page-header {
+  padding-block-end: spacing.$spacing-06;
+}
+
+.drw-page-title {
+  margin: 0;
+  @include type.type-style("productive-heading-05");
+}
+
+.drw-page-subtitle {
+  margin: spacing.$spacing-02 0 0;
+  color: var(--cds-text-secondary);
+  @include type.type-style("body-compact-02");
+}
+
+/* ------------------------------------------------------------- layout aids */
+
+.drw-stack {
+  display: flex;
+  flex-direction: column;
+  gap: spacing.$spacing-06;
+}
+
+.drw-stack-tight {
+  display: flex;
+  flex-direction: column;
+  gap: spacing.$spacing-04;
+}
+
+.drw-row {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: spacing.$spacing-04;
+}
+
+.drw-row--center {
+  align-items: center;
+}
+
+.drw-grow {
+  flex: 1 1 10rem;
+  min-width: 8rem;
+}
+
+// Two-up page layout: configuration | validate + review.
+.drw-split {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: spacing.$spacing-06;
+  align-items: start;
+}
+
+@include bp.breakpoint-down("xlg") {
+  .drw-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+// Responsive auto-fit field grid for forms.
+.drw-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+  gap: spacing.$spacing-05;
+}
+
+/* ------------------------------------------------------------------ cards */
+
+// A section is a Carbon Tile with a heading block; nested form fields sit on
+// the next layer so Carbon's layering tokens produce correct field colours.
+.drw-card {
+  background-color: var(--cds-layer-01);
+  padding: spacing.$spacing-06;
+}
+
+.drw-card__header {
+  margin-block-end: spacing.$spacing-05;
+}
+
+.drw-card__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: spacing.$spacing-04;
+}
+
+.drw-card__title {
+  margin: 0;
+  @include type.type-style("productive-heading-03");
+}
+
+.drw-card__desc {
+  margin: spacing.$spacing-02 0 0;
+  color: var(--cds-text-secondary);
+  @include type.type-style("helper-text-02");
+}
+
+.drw-subheading {
+  margin: 0 0 spacing.$spacing-03;
+  @include type.type-style("productive-heading-02");
+}
+
+/* ------------------------------------------------------------- typography */
+
+.drw-mono {
+  font-family: var(--cds-font-family-mono, "IBM Plex Mono", monospace);
+  word-break: break-all;
+}
+
+.drw-num {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.drw-muted {
+  color: var(--cds-text-secondary);
+  margin: 0;
+}
+
+.drw-hint {
+  color: var(--cds-text-secondary);
+  margin: 0;
+  @include type.type-style("helper-text-01");
+}
+
+.drw-error-text {
+  color: var(--cds-text-error);
+}
+
+/* ------------------------------------------------------------ definitions */
+
+.drw-kv {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+  gap: spacing.$spacing-05;
+}
+
+.drw-kv dt {
+  color: var(--cds-text-secondary);
+  @include type.type-style("label-01");
+}
+
+.drw-kv dd {
+  margin: spacing.$spacing-01 0 0;
+  @include type.type-style("body-compact-02");
+}
+
+.drw-kv--stat dd {
+  @include type.type-style("productive-heading-04");
+}
+
+.drw-pre {
+  margin: 0;
+  padding: spacing.$spacing-05;
+  background-color: var(--cds-layer-02);
+  border: 1px solid var(--cds-border-subtle-02);
+  max-height: 22rem;
+  overflow: auto;
+  font-family: var(--cds-font-family-mono, "IBM Plex Mono", monospace);
+  @include type.type-style("code-02");
+  white-space: pre-wrap;
+}
+
+.drw-pre:focus-visible {
+  outline: 2px solid var(--cds-focus);
+}
+
+/* ---------------------------------------------------------------- tables */
+
+// Carbon TableContainer supplies title/description; make wide tables scroll
+// inside their container rather than the page.
+.drw-table-scroll {
+  overflow-x: auto;
+}
+
+.drw-table-scroll .cds--data-table-content {
+  overflow-x: visible;
+}
+
+/* ---------------------------------------------------------------- status */
+
+.drw-status {
+  display: flex;
+  flex-direction: column;
+  gap: spacing.$spacing-04;
+}
+
+.drw-status__bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: spacing.$spacing-04;
+  padding: spacing.$spacing-04 spacing.$spacing-05;
+  background-color: var(--cds-layer-01);
+  border-inline-start: 4px solid var(--cds-support-info);
+}
+
+.drw-status__bar[data-status="succeeded"] {
+  border-inline-start-color: var(--cds-support-success);
+}
+
+.drw-status__bar[data-status="failed"],
+.drw-status__bar[data-status="timed_out"] {
+  border-inline-start-color: var(--cds-support-error);
+}
+
+.drw-status__bar[data-status="cancelled"] {
+  border-inline-start-color: var(--cds-support-warning);
+}
+
+.drw-status__bar[data-status="idle"] {
+  border-inline-start-color: var(--cds-border-strong-01);
+}
+
+.drw-status__label {
+  color: var(--cds-text-primary);
+  @include type.type-style("body-compact-02");
+}
+
+.drw-status__detail {
+  color: var(--cds-text-secondary);
+  @include type.type-style("body-compact-01");
+}
+
+/* ----------------------------------------------------------------- chart */
+
+.drw-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  background-color: var(--cds-layer-01);
+  border: 1px solid var(--cds-border-subtle-01);
+}
+
+.drw-chart text {
+  font-family: var(--cds-font-family-sans, "IBM Plex Sans", sans-serif);
+}
+
+.drw-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: spacing.$spacing-03 spacing.$spacing-06;
+  margin-block-start: spacing.$spacing-04;
+  color: var(--cds-text-primary);
+  @include type.type-style("label-01");
+}
+
+.drw-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: spacing.$spacing-03;
+}
+
+.drw-swatch {
+  display: inline-block;
+  width: 1.5rem;
+  height: 0;
+  border-block-start: 3px solid currentColor;
+}
+
+.drw-swatch.dashed {
+  border-block-start-style: dashed;
+}
+
+/* ------------------------------------------------------------ tab panels */
+
+.drw-tabpanel {
+  padding-block: spacing.$spacing-06 0;
+  padding-inline: 0;
+}
+
+.cds--tab-content.drw-tabpanel {
+  padding-inline: 0;
+}
+
+.drw-sidebar__heading.drw-sidebar__section--flush {
+  margin: 0;
+}
+
+.drw-intervention {
+  padding: spacing.$spacing-05;
+  border: 1px solid var(--cds-border-subtle-02);
+}
+
+.drw-form-note {
+  margin-block-start: spacing.$spacing-04;
+}
+
+.drw-select-narrow {
+  max-inline-size: 20rem;
+}
+
+.drw-proposal {
+  padding-block-start: spacing.$spacing-04;
+}
+
+.drw-figure {
+  margin: 0;
+}

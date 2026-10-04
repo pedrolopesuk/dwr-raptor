@@ -1,0 +1,219 @@
+{
+  "$defs": {
+    "OutputSpec": {
+      "additionalProperties": false,
+      "description": "A named output produced by a model.",
+      "properties": {
+        "axis_unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Axis Unit"
+        },
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "kind": {
+          "default": "timeseries",
+          "enum": [
+            "scalar",
+            "vector",
+            "timeseries",
+            "matrix",
+            "categorical"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "labels": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Labels",
+          "type": "array"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "unit": {
+          "default": "dimensionless",
+          "title": "Unit",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "OutputSpec",
+      "type": "object"
+    },
+    "ParameterSpec": {
+      "additionalProperties": false,
+      "description": "A single parameter accepted by a model.\n\n``nominal`` is the default/baseline value. ``lower``/``upper`` bound numeric\nparameters and are required to be varied across a range. ``role`` records\nwhether the parameter is an ordinary input, a state variable (an initial\ncondition) or a control.",
+      "properties": {
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "differentiable": {
+          "default": false,
+          "title": "Differentiable",
+          "type": "boolean"
+        },
+        "lower": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lower"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "nominal": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Nominal"
+        },
+        "options": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Options",
+          "type": "array"
+        },
+        "role": {
+          "default": "input",
+          "enum": [
+            "input",
+            "state",
+            "control"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "float",
+            "int",
+            "bool",
+            "categorical"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "unit": {
+          "default": "dimensionless",
+          "title": "Unit",
+          "type": "string"
+        },
+        "upper": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Upper"
+        }
+      },
+      "required": [
+        "name",
+        "type"
+      ],
+      "title": "ParameterSpec",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The complete declared contract of a scientific model.",
+  "properties": {
+    "description": {
+      "default": "",
+      "title": "Description",
+      "type": "string"
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "title": "Metadata",
+      "type": "object"
+    },
+    "model_id": {
+      "title": "Model Id",
+      "type": "string"
+    },
+    "outputs": {
+      "items": {
+        "$ref": "#/$defs/OutputSpec"
+      },
+      "title": "Outputs",
+      "type": "array"
+    },
+    "parameters": {
+      "items": {
+        "$ref": "#/$defs/ParameterSpec"
+      },
+      "title": "Parameters",
+      "type": "array"
+    },
+    "runtime": {
+      "default": "python",
+      "title": "Runtime",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "version": {
+      "default": "0.1.0",
+      "title": "Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "model_id",
+    "parameters",
+    "outputs"
+  ],
+  "title": "ModelSchema",
+  "type": "object"
+}

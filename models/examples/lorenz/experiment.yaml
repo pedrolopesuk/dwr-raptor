@@ -1,0 +1,46 @@
+# DRW example experiment: sensitivity of the Lorenz attractor to rho.
+#
+# Demonstrates: a small grid design, chaotic divergence between nearby
+# configurations, and deterministic reproducibility for a fixed configuration.
+name: lorenz rho sweep
+hypothesis: >-
+  Small changes in the Rayleigh number rho around the classic value of 28
+  progressively decorrelate the trajectories of the Lorenz system.
+
+model_ref:
+  model_id: lorenz
+  version: "1.0.0"
+
+baseline:
+  sigma: 10.0
+  rho: 28.0
+  beta: 2.6666666666666665
+  x0: 1.0
+  y0: 1.0
+  z0: 1.0
+
+factors:
+  - parameter: rho
+    lower: 27.0
+    upper: 29.0
+    steps: 3
+
+outputs: [x, y, z]
+
+sampling:
+  method: grid
+
+analyses:
+  - method: delta
+
+execution:
+  solver: explicit
+  timeout_s: 60.0
+  max_runs: 16
+
+verification:
+  rtol: 1.0e-9
+  atol: 1.0e-12
+
+reporting:
+  title: "Lorenz: rho sweep"

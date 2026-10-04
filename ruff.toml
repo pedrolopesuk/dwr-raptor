@@ -1,0 +1,22 @@
+target-version = "py311"
+line-length = 100
+
+[lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = [
+  # Line length is handled by the formatter; long string literals and URLs are fine.
+  "E501",
+]
+
+[lint.isort]
+known-first-party = ["drw"]
+
+[lint.per-file-ignores]
+# Fixtures and example scripts may import for side effects and use loose typing.
+"tests/**" = ["B011"]
+"scripts/**" = ["E402"]
+
+[format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
