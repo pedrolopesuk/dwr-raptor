@@ -16,8 +16,12 @@ Response (always JSON, never a traceback)::
 Operations: ``list_models``, ``describe_model``, ``capabilities``,
 ``sample_experiment``, ``validate``, ``run``, ``job_status``,
 ``list_experiments``, ``get_experiment``, ``evidence``, ``export_evidence``,
-``verify_evidence``, ``sensitivity``, ``list_projects``, ``create_project``,
-``plan_experiment``, ``planner_status``, ``environment``.
+``verify_evidence``, ``reproduce_experiment``, ``sensitivity``, ``uncertainty``,
+``global_sensitivity``, ``identifiability``, ``list_dataset_sources``,
+``inspect_dataset``, ``import_dataset``, ``list_datasets``, ``describe_dataset``
+(alias ``get_dataset``), ``verify_dataset``, ``evaluate``, ``calibrate``,
+``list_calibrations``, ``get_calibration``, ``verify_calibration``, ``list_projects``,
+``create_project``, ``plan_experiment``, ``planner_status``, ``environment``.
 
 The workspace root comes from ``DRW_WORKSPACE``. The bridge executes only
 registered models; it exposes no network service and runs no arbitrary
@@ -77,6 +81,13 @@ def _param_str(params: Params, key: str) -> str:
     if not isinstance(value, str) or not value:
         raise ApiError("bad_request", f"parameter {key!r} must be a non-empty string")
     return value
+
+
+def _param_number(params: Params, key: str) -> float:
+    value = _require(params, key)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ApiError("bad_request", f"parameter {key!r} must be a number")
+    return float(value)
 
 
 def _load_spec(params: Params) -> ExperimentSpec:
@@ -269,6 +280,398 @@ def op_verify_evidence(params: Params, store: ExperimentStore) -> dict[str, Any]
     return {"experiment_id": experiment_id, "verification": to_plain(report)}
 
 
+def op_reproduce_experiment(params: Params, store: ExperimentStore) -> dict[str, Any]:
+    from drw.reproduce import ReproduceError, reproduce_experiment
+
+    experiment_id = _param_str(params, "experiment_id")
+    rtol = _param_number(params, "rtol")
+    atol = _param_number(params, "atol")
+    try:
+        report = reproduce_experiment(experiment_id, rtol=rtol, atol=atol, store=store)
+    except ReproduceError as exc:
+        raise ApiError("bad_request", str(exc)) from exc
+    return {"report": to_plain(report)}
+
+
+def op_uncertainty(params: Params, store: ExperimentStore) -> dict[str, Any]:
+    from drw.uncertainty import UncertaintyError, uncertainty_for_experiment
+
+    experiment_id = _param_str(params, "experiment_id")
+    try:
+        summary = uncertainty_for_experiment(experiment_id, store)
+    except UncertaintyError as exc:
+        raise ApiError("bad_request", str(exc)) from exc
+    return {"uncertainty": to_plain(summary)}
+
+
+def op_global_sensitivity(params: Params, store: ExperimentStore) -> dict[str, Any]:
+    from drw.global_sensitivity import (
+        DEFAULT_BOOTSTRAP,
+        DEFAULT_SAMPLE_COUNT,
+        GlobalSensitivityError,
+        default_factors,
+        sobol_indices_for_experiment,
+    )
+    from drw.models.registry import build_model
+    from drw.schema.experiment import ExperimentSpec as _Spec
+
+    experiment_id = _param_str(params, "experiment_id")
+    output = params.get("output") or None
+    factors = params.get("factors") or None
+    if factors is not None and (
+        not isinstance(factors, list) or not all(isinstance(item, str) for item in factors)
+    ):
+        raise ApiError("bad_request", "'factors' must be a list of parameter names")
+    try:
+        sample_count = int(params.get("sample_count", DEFAULT_SAMPLE_COUNT))
+        seed = int(params.get("seed", 0))
+        bootstrap = int(params.get("bootstrap_resamples", DEFAULT_BOOTSTRAP))
+    except (TypeError, ValueError) as exc:
+        raise ApiError("bad_request", f"invalid numeric study parameter: {exc}") from exc
+
+    # Resolve the study size for the job journal (reuses the core's canonical
+    # factor-selection rule so the reported total matches what will run).
+    loaded = store.load(experiment_id)  # KeyError -> not found
+    spec = _Spec.model_validate(loaded["spec"])
+    schema = build_model(spec.model_ref.model_id).describe()
+    chosen_factors = list(factors) if factors else default_factors(schema)
+
+    journal: JobJournal | None = None
+    if params.get("job_id") is not None:
+        try:
+            journal = JobJournal(store.root, str(params["job_id"]))
+        except InvalidJobId as exc:
+            raise ApiError("bad_request", str(exc)) from exc
+        journal.prune()
+        journal.append("started", total_runs=sample_count * (len(chosen_factors) + 2))
+
+    try:
+        report = sobol_indices_for_experiment(
+            experiment_id,
+            store,
+            output=output,
+            factors=factors,
+            sample_count=sample_count,
+            seed=seed,
+            journal=journal,
+            bootstrap_resamples=bootstrap,
+        )
+    except GlobalSensitivityError as exc:
+        if journal is not None:
+            journal.append("finished", status="failed", error="bad_request")
+        raise ApiError("bad_request", str(exc)) from exc
+
+    if journal is not None:
+        journal.append(
+            "finished",
+            status="inconclusive" if report.inconclusive else "succeeded",
+            evaluations=report.evaluations_completed,
+        )
+    return {"report": to_plain(report)}
+
+
+def op_identifiability(params: Params, store: ExperimentStore) -> dict[str, Any]:
+    from drw.identifiability import (
+        CONDITION_THRESHOLD,
+        DEFAULT_RANK_TOLERANCE,
+        DEFAULT_STEP_SCALE,
+        IdentifiabilityError,
+        default_factors,
+        identifiability_for_experiment,
+    )
+    from drw.models.registry import build_model
+    from drw.schema.experiment import ExperimentSpec as _Spec
+
+    experiment_id = _param_str(params, "experiment_id")
+    factors = params.get("factors") or None
+    outputs = params.get("outputs") or None
+    for key, value in (("factors", factors), ("outputs", outputs)):
+        if value is not None and (
+            not isinstance(value, list) or not all(isinstance(item, str) for item in value)
+        ):
+            raise ApiError("bad_request", f"{key!r} must be a list of names")
+    try:
+        step_scale = float(params.get("step_scale", DEFAULT_STEP_SCALE))
+        seed = int(params.get("seed", 0))
+        rank_tolerance = float(params.get("rank_tolerance", DEFAULT_RANK_TOLERANCE))
+        condition_threshold = float(params.get("condition_threshold", CONDITION_THRESHOLD))
+    except (TypeError, ValueError) as exc:
+        raise ApiError("bad_request", f"invalid numeric study parameter: {exc}") from exc
+
+    # Resolve the study size for the job journal (reuses the core's canonical
+    # factor-selection rule so the reported total matches what will run).
+    loaded = store.load(experiment_id)  # KeyError -> not found
+    spec = _Spec.model_validate(loaded["spec"])
+    schema = build_model(spec.model_ref.model_id).describe()
+    chosen_factors = list(factors) if factors else default_factors(schema)
+    total = 2 * len(chosen_factors) + 1
+
+    journal: JobJournal | None = None
+    if params.get("job_id") is not None:
+        try:
+            journal = JobJournal(store.root, str(params["job_id"]))
+        except InvalidJobId as exc:
+            raise ApiError("bad_request", str(exc)) from exc
+        journal.prune()
+        journal.append("started", total_runs=total)
+
+    try:
+        report = identifiability_for_experiment(
+            experiment_id,
+            store,
+            factors=factors,
+            outputs=outputs,
+            step_scale=step_scale,
+            seed=seed,
+            journal=journal,
+            rank_tolerance=rank_tolerance,
+            condition_threshold=condition_threshold,
+        )
+    except IdentifiabilityError as exc:
+        if journal is not None:
+            journal.append("finished", status="failed", error="bad_request")
+        raise ApiError("bad_request", str(exc)) from exc
+
+    if journal is not None:
+        journal.append(
+            "finished",
+            status="inconclusive" if report.inconclusive else "succeeded",
+            evaluations=report.evaluations_completed,
+        )
+    return {"report": to_plain(report)}
+
+
+def _dataset_source_path(store: ExperimentStore, filename: str) -> Path:
+    """Resolve a CSV file inside ``<workspace>/dataset-sources`` (contained)."""
+    if not filename:
+        raise ApiError("bad_request", "filename must be a non-empty string")
+    relative = Path(filename)
+    if relative.is_absolute() or ".." in relative.parts:
+        raise ApiError(
+            "bad_request", "filename must be a relative path inside the dataset-sources directory"
+        )
+    sources = (Path(store.root) / "dataset-sources").resolve()
+    candidate = (sources / relative).resolve()
+    if candidate != sources and sources not in candidate.parents:
+        raise ApiError("bad_request", "filename escapes the dataset-sources directory")
+    if not candidate.is_file():
+        raise ApiError("not_found", f"source file {filename!r} not found")
+    return candidate
+
+
+def op_list_dataset_sources(_params: Params, store: ExperimentStore) -> dict[str, Any]:
+    sources = Path(store.root) / "dataset-sources"
+    if not sources.is_dir():
+        return {"sources": []}
+    items = [
+        {"filename": path.name, "size_bytes": path.stat().st_size}
+        for path in sorted(sources.glob("*.csv"))
+        if path.is_file()
+    ]
+    return {"sources": items}
+
+
+def op_inspect_dataset(params: Params, store: ExperimentStore) -> dict[str, Any]:
+    from drw.adapters.csv_adapter import CSV_ADAPTER, InspectionError
+
+    path = _dataset_source_path(store, _param_str(params, "filename"))
+    delimiter = params.get("delimiter") or None
+    has_header = params.get("has_header")
+    if has_header is not None and not isinstance(has_header, bool):
+        raise ApiError("bad_request", "'has_header' must be a boolean when supplied")
+    missing = params.get("missing_codes") or []
+    if not isinstance(missing, list) or not all(isinstance(item, str) for item in missing):
+        raise ApiError("bad_request", "'missing_codes' must be a list of strings")
+    try:
+        inspection = CSV_ADAPTER.inspect(
+            path, delimiter=delimiter, has_header=has_header, missing_codes=tuple(missing)
+        )
+    except InspectionError as exc:
+        raise ApiError("bad_request", str(exc)) from exc
+    return {"inspection": to_plain(inspection)}
+
+
+def op_import_dataset(params: Params, store: ExperimentStore) -> dict[str, Any]:
+    from drw.adapters.csv_adapter import (
+        CsvImportConfig,
+        DatasetImportError,
+        import_csv,
+    )
+    from drw.dataset_store import DatasetStore
+
+    path = _dataset_source_path(store, _param_str(params, "filename"))
+    config_raw = _require(params, "config")
+    try:
+        config = CsvImportConfig.model_validate(config_raw)
+    except PydanticValidationError as exc:
+        raise ApiError(
+            "bad_request", "the import configuration is not well formed", diagnostics=exc.errors()
+        ) from exc
+    dry_run = bool(params.get("dry_run", False))
+    datasets = DatasetStore(store.root)
+    try:
+        ref = import_csv(path, config, datasets, dry_run=dry_run)
+    except DatasetImportError as exc:
+        raise ApiError(
+            "bad_request", str(exc), diagnostics=to_plain(exc.diagnostics)
+        ) from exc
+    data: dict[str, Any] = {
+        "ref": to_plain(ref),
+        "dry_run": dry_run,
+        "stored": not dry_run,
+    }
+    if not dry_run:
+        data["verification"] = to_plain(datasets.verify(ref.dataset_id))
+    return data
+
+
+def op_list_datasets(_params: Params, store: ExperimentStore) -> dict[str, Any]:
+    from drw.dataset_store import DatasetStore
+
+    datasets = DatasetStore(store.root)
+    summaries: list[dict[str, Any]] = []
+    for ref in datasets.list():
+        item = to_plain(ref)
+        try:
+            item["source_kind"] = datasets.provenance(ref.dataset_id).source_kind
+        except (ValueError, KeyError):
+            item["source_kind"] = None
+        summaries.append(item)
+    return {"datasets": summaries}
+
+
+def op_describe_dataset(params: Params, store: ExperimentStore) -> dict[str, Any]:
+    from drw.dataset_store import DatasetStore
+
+    dataset_id = _param_str(params, "dataset_id")
+    datasets = DatasetStore(store.root)
+    dataset = datasets.load(dataset_id)  # KeyError -> not_found; ValueError -> bad_request
+    return {
+        "ref": to_plain(datasets.ref(dataset_id)),
+        "dataset": to_plain(dataset),
+        "verification": to_plain(datasets.verify(dataset_id)),
+    }
+
+
+def op_verify_dataset(params: Params, store: ExperimentStore) -> dict[str, Any]:
+    from drw.dataset_store import DatasetStore
+
+    report = DatasetStore(store.root).verify(_param_str(params, "dataset_id"))
+    return {"dataset_id": report.dataset_id, "verification": to_plain(report)}
+
+
+def op_evaluate(params: Params, store: ExperimentStore) -> dict[str, Any]:
+    from drw.dataset_store import DatasetStore
+    from drw.evaluation import evaluate_run
+    from drw.execution.environment import fingerprint_hash
+    from drw.schema.evaluation import EvaluationConfig
+    from drw.schema.observation import ObservationMapping
+    from drw.schema.result import RunRecord
+
+    experiment_id = _param_str(params, "experiment_id")
+    run_id = str(params.get("run_id") or "baseline")
+    try:
+        mapping = ObservationMapping.model_validate(_require(params, "mapping"))
+    except PydanticValidationError as exc:
+        raise ApiError("bad_request", "the mapping is not well formed", diagnostics=exc.errors()) from exc
+    try:
+        config = EvaluationConfig.model_validate(params.get("config") or {})
+    except PydanticValidationError as exc:
+        raise ApiError(
+            "bad_request", "the evaluation config is not well formed", diagnostics=exc.errors()
+        ) from exc
+
+    loaded = store.load(experiment_id)  # KeyError -> not found
+    spec = ExperimentSpec.model_validate(loaded["spec"])
+    results = loaded["results"]
+    schema = build_model(spec.model_ref.model_id).describe()
+    runs = [RunRecord.model_validate(record) for record in results.get("runs", [])]
+    if not runs:
+        raise ApiError("bad_request", "the experiment has no runs to evaluate")
+    if run_id == "baseline":
+        run = runs[0]
+    else:
+        run = next((candidate for candidate in runs if candidate.run_id == run_id), None)
+        if run is None:
+            raise ApiError("bad_request", f"experiment {experiment_id!r} has no run {run_id!r}")
+    dataset = DatasetStore(store.root).load(mapping.dataset.dataset_id)
+    result = evaluate_run(
+        run,
+        schema=schema,
+        dataset=dataset,
+        mapping=mapping,
+        config=config,
+        spec_hash=results.get("spec_hash", ""),
+        environment_hash=fingerprint_hash(results.get("environment") or {}),
+        model_hash=results.get("model_hash", ""),
+    )
+    return {"evaluation": to_plain(result)}
+
+
+def op_calibrate(params: Params, store: ExperimentStore) -> dict[str, Any]:
+    from drw.calibration import calibrate_for_experiment
+    from drw.calibration_store import CalibrationStore
+    from drw.jobs import InvalidJobId, JobJournal
+    from drw.schema.calibration import CalibrationConfig
+
+    experiment_id = _param_str(params, "experiment_id")
+    try:
+        config = CalibrationConfig.model_validate(_require(params, "config"))
+    except PydanticValidationError as exc:
+        raise ApiError(
+            "bad_request", "the calibration config is not well formed", diagnostics=exc.errors()
+        ) from exc
+    # The request experiment id is authoritative.
+    config = config.model_copy(update={"experiment_id": experiment_id})
+    persist = bool(params.get("persist", False))
+
+    journal: JobJournal | None = None
+    if params.get("job_id") is not None:
+        try:
+            journal = JobJournal(store.root, str(params["job_id"]))
+        except InvalidJobId as exc:
+            raise ApiError("bad_request", str(exc)) from exc
+        journal.prune()
+        journal.append(
+            "started", total_runs=config.budget.max_evaluations, experiment_id=experiment_id
+        )
+
+    result = calibrate_for_experiment(experiment_id, store, config, journal=journal)
+
+    data: dict[str, Any] = {"calibration": to_plain(result)}
+    if persist:
+        data["ref"] = to_plain(CalibrationStore(store.root).save(result))
+    if journal is not None:
+        journal.append(
+            "finished", status=result.status, evaluations=result.evaluations_completed
+        )
+    return data
+
+
+def op_list_calibrations(_params: Params, store: ExperimentStore) -> dict[str, Any]:
+    from drw.calibration_store import CalibrationStore
+
+    return {"calibrations": to_plain(CalibrationStore(store.root).list())}
+
+
+def op_get_calibration(params: Params, store: ExperimentStore) -> dict[str, Any]:
+    from drw.calibration_store import CalibrationStore
+
+    calibrations = CalibrationStore(store.root)
+    calibration_id = _param_str(params, "calibration_id")
+    return {
+        "calibration": to_plain(calibrations.load(calibration_id)),
+        "ref": to_plain(calibrations.ref(calibration_id)),
+    }
+
+
+def op_verify_calibration(params: Params, store: ExperimentStore) -> dict[str, Any]:
+    from drw.calibration_store import CalibrationStore
+
+    report = CalibrationStore(store.root).verify(_param_str(params, "calibration_id"))
+    return {"verification": to_plain(report)}
+
+
 def op_sensitivity(params: Params, store: ExperimentStore) -> dict[str, Any]:
     loaded = store.load(_param_str(params, "experiment_id"))
     spec = ExperimentSpec.model_validate(loaded["spec"])
@@ -346,7 +749,23 @@ _OPS: dict[str, Callable[[Params, ExperimentStore], dict[str, Any]]] = {
     "evidence": op_evidence,
     "export_evidence": op_export_evidence,
     "verify_evidence": op_verify_evidence,
+    "reproduce_experiment": op_reproduce_experiment,
     "sensitivity": op_sensitivity,
+    "uncertainty": op_uncertainty,
+    "global_sensitivity": op_global_sensitivity,
+    "identifiability": op_identifiability,
+    "list_dataset_sources": op_list_dataset_sources,
+    "inspect_dataset": op_inspect_dataset,
+    "import_dataset": op_import_dataset,
+    "list_datasets": op_list_datasets,
+    "describe_dataset": op_describe_dataset,
+    "get_dataset": op_describe_dataset,
+    "verify_dataset": op_verify_dataset,
+    "evaluate": op_evaluate,
+    "calibrate": op_calibrate,
+    "list_calibrations": op_list_calibrations,
+    "get_calibration": op_get_calibration,
+    "verify_calibration": op_verify_calibration,
     "list_projects": op_list_projects,
     "create_project": op_create_project,
     "plan_experiment": op_plan_experiment,

@@ -271,22 +271,27 @@ class ExperimentStore:
 
 
 def result_payload(result: ExperimentResult) -> dict[str, Any]:
-    """Canonical, JSON-ready representation of an experiment result."""
-    return to_plain(
-        {
-            "experiment_id": result.experiment_id,
-            "name": result.spec.name,
-            "hypothesis": result.spec.hypothesis,
-            "model_ref": result.model_ref,
-            "isolation": result.isolation,
-            "spec_hash": result.spec_hash,
-            "model_hash": result.model_hash,
-            "environment": result.environment,
-            "estimate": result.estimate,
-            "warnings": result.warnings,
-            "runs": result.runs,
-            "comparisons": result.comparisons,
-            "started_at": result.started_at,
-            "finished_at": result.finished_at,
-        }
-    )
+    """Canonical, JSON-ready representation of an experiment result.
+
+    ``uncertainty`` is included only when the experiment declared the analysis, so
+    results for experiments without it are unchanged.
+    """
+    payload: dict[str, Any] = {
+        "experiment_id": result.experiment_id,
+        "name": result.spec.name,
+        "hypothesis": result.spec.hypothesis,
+        "model_ref": result.model_ref,
+        "isolation": result.isolation,
+        "spec_hash": result.spec_hash,
+        "model_hash": result.model_hash,
+        "environment": result.environment,
+        "estimate": result.estimate,
+        "warnings": result.warnings,
+        "runs": result.runs,
+        "comparisons": result.comparisons,
+        "started_at": result.started_at,
+        "finished_at": result.finished_at,
+    }
+    if result.uncertainty is not None:
+        payload["uncertainty"] = result.uncertainty
+    return to_plain(payload)

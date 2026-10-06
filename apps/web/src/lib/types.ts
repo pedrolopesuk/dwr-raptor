@@ -163,6 +163,7 @@ export interface ExperimentData {
   project_id?: string | null;
   job_id?: string | null;
   evidence?: EvidenceData;
+  uncertainty?: UncertaintySummary | null;
 }
 
 export interface ExperimentSummary {
@@ -208,6 +209,26 @@ export interface EnvironmentData {
   environment_hash: string;
 }
 
+export interface GlobalSensitivityCapabilities {
+  /** Backend default base sample size N (`drw.global_sensitivity.DEFAULT_SAMPLE_COUNT`). */
+  default_sample_count: number;
+  /** Hard cap on model evaluations for one study (`MAX_EVALUATIONS`). */
+  max_evaluations: number;
+}
+
+export interface IdentifiabilityCapabilities {
+  /** Method identifier (`drw.identifiability.IDENTIFIABILITY_METHOD`). */
+  method: string;
+  /** Relative finite-difference step scale (`DEFAULT_STEP_SCALE`). */
+  default_step_scale: number;
+  /** Condition number above which a study is "ill-conditioned". */
+  condition_threshold: number;
+  /** Hard cap on model evaluations for one identifiability study. */
+  max_evaluations: number;
+  /** Fixed, disclosed time-series feature set (`TIMESERIES_FEATURES`). */
+  timeseries_features: string[];
+}
+
 export interface ModelCapabilities {
   model_id: string;
   version: string;
@@ -227,6 +248,10 @@ export interface ModelCapabilities {
   analysis_methods: string[];
   sensitivity: string | null;
   isolation: string;
+  /** Authoritative global-sensitivity study limits (single-sourced in the core). */
+  global_sensitivity: GlobalSensitivityCapabilities;
+  /** Authoritative local-identifiability study configuration (single-sourced in the core). */
+  identifiability?: IdentifiabilityCapabilities;
   limitations: string[];
 }
 
@@ -270,4 +295,571 @@ export interface PlannerStatus {
   llm_configured: boolean;
   provider: string;
   note: string;
+}
+
+/** Reproduction check (ADR-0013): explicit tolerances, read-only comparison. */
+export interface ReproduceTolerances {
+  rtol: number;
+  atol: number;
+}
+
+export type ReproduceVerdict =
+  | "identical"
+  | "equivalent_within_tolerance"
+  | "different"
+  | "inconclusive"
+  | "execution_failed";
+
+export type ReproduceOutputStatus = "identical" | "equivalent" | "different" | "incomparable";
+
+export interface ReproduceOutputComparison {
+  output: string;
+  unit: string;
+  comparable: boolean;
+  status: ReproduceOutputStatus;
+  identical: boolean;
+  passes_tolerance: boolean | null;
+  alignment: string | null;
+  interpolated: boolean | null;
+  shape_compatible: boolean;
+  max_abs_delta: number | null;
+  max_abs_relative_delta: number | null;
+  mae: number | null;
+  rmse: number | null;
+  n_points: number | null;
+  valid_points: number | null;
+  non_finite_points: number | null;
+  warnings: Diagnostic[];
+  note: string | null;
+}
+
+export interface ReproduceRunComparison {
+  index: number;
+  label: string;
+  reference_run_id: string;
+  fresh_run_id: string | null;
+  reference_status: string;
+  fresh_status: string | null;
+  comparable: boolean;
+  identical: boolean;
+  passes_tolerance: boolean | null;
+  outputs: ReproduceOutputComparison[];
+  warnings: string[];
+}
+
+export interface ReproduceProvenance {
+  spec_hash_stored: string;
+  spec_hash_current: string;
+  spec_hash_match: boolean;
+  model_hash_stored: string;
+  model_hash_current: string;
+  model_hash_match: boolean;
+  environment_hash_stored: string;
+  environment_hash_current: string;
+  environment_hash_match: boolean;
+  differences: string[];
+}
+
+export interface ReproduceReport {
+  experiment_id: string;
+  verdict: ReproduceVerdict;
+  numerical: ReproduceVerdict;
+  tolerances: ReproduceTolerances;
+  provenance: ReproduceProvenance;
+  reference_run_ids: string[];
+  fresh_run_ids: string[];
+  runs: ReproduceRunComparison[];
+  warnings: string[];
+  /** False: the fresh execution exists only in memory and is never stored. */
+  fresh_runs_persisted: boolean;
+}
+
+/** Descriptive uncertainty summary over an experiment's sampled variants. */
+export interface UncertaintyOutput {
+  output: string;
+  unit: string;
+  requested_variants: number;
+  valid_samples: number;
+  excluded_samples: number;
+  exclusions: Record<string, number>;
+  sufficient: boolean;
+  mean: number | null;
+  std: number | null;
+  minimum: number | null;
+  maximum: number | null;
+  p05: number | null;
+  p50: number | null;
+  p95: number | null;
+  note: string | null;
+}
+
+export interface UncertaintySummary {
+  schema_version: string;
+  sampling_method: string;
+  seed: number;
+  /** Per-run count: the number of sampled variant runs. */
+  requested_variants: number;
+  /** Total valid samples summed across the declared scalar outputs. */
+  valid_output_samples: number;
+  /** Total excluded samples summed across the declared scalar outputs. */
+  excluded_output_samples: number;
+  quantiles: number[];
+  quantile_method: string;
+  outputs: UncertaintyOutput[];
+  note: string | null;
+  descriptive_only: boolean;
+}
+
+/** Global variance-based (Sobol) sensitivity study. */
+export interface SobolFactor {
+  name: string;
+  s1: number | null;
+  st: number | null;
+  s1_ci: [number, number] | null;
+  st_ci: [number, number] | null;
+}
+
+export interface SobolReport {
+  model_id: string;
+  output: string;
+  estimator: string;
+  sample_count: number;
+  seed: number;
+  dimensions: number;
+  factors: string[];
+  evaluations_requested: number;
+  evaluations_completed: number;
+  variance: number | null;
+  inconclusive: boolean;
+  reasons: string[];
+  results: SobolFactor[];
+  bootstrap_resamples: number;
+  independent_inputs_assumed: boolean;
+  note: string | null;
+}
+
+/** Local parameter identifiability study (finite-difference sensitivity SVD). */
+export type IdentifiabilityVerdict =
+  | "well-conditioned"
+  | "ill-conditioned"
+  | "rank-deficient"
+  | "inconclusive";
+
+export interface IdentifiabilityTarget {
+  output: string;
+  feature: string;
+  unit: string;
+  baseline_value: number | null;
+  scale: number | null;
+  informative: boolean;
+  note: string | null;
+}
+
+export interface IdentifiabilityFactor {
+  name: string;
+  unit: string;
+  baseline_value: number | null;
+  step: number | null;
+  lower: number | null;
+  upper: number | null;
+  plus_value: number | null;
+  minus_value: number | null;
+  valid: boolean;
+  note: string | null;
+}
+
+export interface IdentifiabilityDirection {
+  index: number;
+  singular_value: number;
+  condition_index: number | null;
+  problematic: boolean;
+  dominant: string[];
+  weights: Record<string, number>;
+}
+
+export interface IdentifiabilityPairCorrelation {
+  first: string;
+  second: string;
+  correlation: number;
+}
+
+export interface IdentifiabilityReport {
+  model_id: string;
+  experiment_id: string | null;
+  method: string;
+  factors: string[];
+  factors_detail: IdentifiabilityFactor[];
+  targets: IdentifiabilityTarget[];
+  dimensions: number;
+  n_targets: number;
+  step_scale: number;
+  absolute_step: number;
+  rank_tolerance: number;
+  condition_threshold: number;
+  correlation_threshold: number;
+  evaluations_requested: number;
+  evaluations_completed: number;
+  singular_values: number[];
+  numerical_rank: number | null;
+  condition_number: number | null;
+  directions: IdentifiabilityDirection[];
+  factor_correlations: IdentifiabilityPairCorrelation[];
+  verdict: IdentifiabilityVerdict;
+  inconclusive: boolean;
+  reasons: string[];
+  normalized: boolean;
+  local_only: boolean;
+  note: string | null;
+}
+
+/** Scientific datasets: observation contract + CSV import (M11). */
+export interface DatasetRef {
+  dataset_id: string;
+  content_hash: string;
+  name: string;
+  created_at: string | null;
+}
+
+export interface DatasetSummary extends DatasetRef {
+  source_kind: string | null;
+}
+
+export interface DatasetSource {
+  filename: string;
+  size_bytes: number;
+}
+
+export interface ColumnInspection {
+  column: string;
+  index: number;
+  kind: string;
+  missing_count: number;
+  non_finite_count: number;
+  sample_values: string[];
+  suggested_role: string | null;
+  suggested_name: string | null;
+  suggested_uncertainty_for: string | null;
+  note: string | null;
+}
+
+export interface CsvInspection {
+  adapter_id: string;
+  adapter_version: string;
+  filename: string;
+  delimiter: string;
+  has_header: boolean;
+  row_count: number;
+  columns: ColumnInspection[];
+  preview: Record<string, string>[];
+  diagnostics: Diagnostic[];
+  advisory: string;
+}
+
+export interface UncertaintyConfig {
+  type: "none" | "std" | "stderr" | "asymmetric" | "interval" | "precision";
+  value?: number | null;
+  column?: string | null;
+  lower?: number | null;
+  upper?: number | null;
+  lower_column?: string | null;
+  upper_column?: string | null;
+  level?: number | null;
+}
+
+export interface QualityConfig {
+  flag_column: string;
+  missing_flags?: string[];
+  invalid_flags?: string[];
+  censored_flags?: string[];
+  rejected_flags?: string[];
+  flagged_flags?: string[];
+}
+
+export interface ColumnConfig {
+  column: string;
+  role: string;
+  name?: string | null;
+  kind?: string | null;
+  unit?: string | null;
+  depends_on?: string[];
+  uncertainty?: UncertaintyConfig | null;
+  quality?: QualityConfig | null;
+  missing_codes?: string[];
+  description?: string;
+  datetime_format?: string | null;
+}
+
+export interface CsvImportConfig {
+  name: string;
+  columns: ColumnConfig[];
+  description?: string;
+  labels?: Record<string, string>;
+  dataset_version?: string;
+  delimiter?: string | null;
+  has_header?: boolean | null;
+  missing_codes?: string[];
+  non_finite_policy?: "error" | "missing";
+  invalid_policy?: "error" | "missing";
+  imported_at?: string | null;
+  license?: string | null;
+  notes?: string;
+}
+
+export interface DatasetVariable {
+  name: string;
+  kind: string;
+  role: string;
+  unit: string | null;
+  depends_on: string[];
+  uncertainty: UncertaintyConfig | null;
+  quality: QualityConfig | null;
+  description: string;
+}
+
+export interface DatasetProvenance {
+  source_kind: string;
+  imported_at: string;
+  dataset_version: string;
+  adapter: { id: string; version: string } | null;
+  original_filename: string | null;
+  source_sha256: string | null;
+  notes: string;
+  license: string | null;
+}
+
+export interface DatasetData {
+  schema_version: string;
+  name: string;
+  description: string;
+  labels: Record<string, string>;
+  provenance: DatasetProvenance;
+  observation_set: {
+    coordinates: string[];
+    variables: DatasetVariable[];
+    columns: Record<string, (number | string | boolean | null)[]>;
+  };
+  files: { name: string; sha256: string; size_bytes: number }[];
+  content_hash: string;
+  dataset_id: string;
+}
+
+export interface DatasetCheck {
+  name: string;
+  status: string;
+  message: string;
+}
+
+export interface DatasetVerification {
+  dataset_id: string;
+  content_hash: string | null;
+  ok: boolean;
+  errors: number;
+  checks: DatasetCheck[];
+  extra_files: string[];
+  note: string;
+}
+
+export interface DatasetImportResult {
+  ref: DatasetRef;
+  dry_run: boolean;
+  stored: boolean;
+  verification?: DatasetVerification;
+}
+
+export interface DatasetDetail {
+  ref: DatasetRef;
+  dataset: DatasetData;
+  verification: DatasetVerification;
+}
+
+/** Observation <-> model evaluation (M12A). */
+export interface EvaluationConfig {
+  metrics?: string[];
+  residual_modes?: string[];
+  alignment?: "exact" | "interpolate";
+  alignment_tolerance?: number;
+  relative_epsilon?: number;
+  time_origin?: string | null;
+  degrees_of_freedom?: number | null;
+}
+
+export interface AlignedPoint {
+  observation_index: number;
+  model_index: number | null;
+  coordinate: number | null;
+  observed: number;
+  predicted: number;
+  residual: number;
+  relative_residual: number | null;
+  sigma: number | null;
+  normalized_residual: number | null;
+}
+
+export interface EvaluationExclusion {
+  observation_index: number;
+  reason: string;
+  detail: string;
+}
+
+export interface PairEvaluation {
+  observation: string;
+  output: string;
+  kind: string;
+  unit: string;
+  alignment: string;
+  tolerance: number;
+  interpolated: boolean;
+  points: AlignedPoint[];
+  exclusions: EvaluationExclusion[];
+  usable_count: number;
+  excluded_count: number;
+  exclusion_counts: Record<string, number>;
+  metrics: Record<string, number | null>;
+  diagnostics: Diagnostic[];
+}
+
+export interface EvaluationProvenance {
+  spec_hash: string;
+  model_hash: string;
+  environment_hash: string;
+  dataset_content_hash: string;
+  mapping_hash: string;
+}
+
+export interface EvaluationResult {
+  eval_schema_version: string;
+  evaluation_hash: string;
+  dataset: DatasetRef;
+  experiment_id: string;
+  run_id: string;
+  attempt: number;
+  model_ref: { model_id: string; version?: string | null };
+  model_hash: string;
+  parameter_snapshot: Record<string, unknown>;
+  mapping: Record<string, unknown>;
+  mapping_hash: string;
+  config: EvaluationConfig;
+  pairs: PairEvaluation[];
+  total_usable: number;
+  total_excluded: number;
+  ok: boolean;
+  diagnostics: Diagnostic[];
+  provenance: EvaluationProvenance;
+}
+
+/** Calibration (M12B). */
+export interface CalibrationParameterSelection {
+  name: string;
+  lower: number;
+  upper: number;
+  initial: number | null;
+  scale?: string;
+  transform?: string;
+}
+
+export interface CalibrationObjectiveConfig {
+  metric: string;
+  observation?: string | null;
+  output?: string | null;
+  aggregation?: string;
+  direction?: string;
+}
+
+export interface CalibrationOptimizerConfig {
+  name: "powell" | "differential_evolution" | "random_search";
+  max_iterations?: number | null;
+  population_size?: number | null;
+  mutation?: number | null;
+  recombination?: number | null;
+}
+
+export interface CalibrationBudget {
+  max_evaluations: number;
+  max_wall_seconds: number;
+  max_failed?: number | null;
+}
+
+export interface CalibrationExecutionTemplate {
+  solver?: string;
+  timeout_s?: number;
+  isolation?: string;
+  max_runs?: number;
+}
+
+export interface CalibrationConfig {
+  schema_version?: string;
+  experiment_id: string;
+  model_ref: { model_id: string; version?: string | null };
+  free: CalibrationParameterSelection[];
+  fixed?: { name: string; value: number | string | boolean }[];
+  objective: CalibrationObjectiveConfig;
+  optimizer?: CalibrationOptimizerConfig;
+  budget?: CalibrationBudget;
+  seed?: number;
+  execution?: CalibrationExecutionTemplate;
+  dataset: DatasetRef;
+  mapping: Record<string, unknown>;
+  evaluation?: EvaluationConfig;
+  identifiability?: string;
+  data_role?: string;
+  notes?: string;
+}
+
+export interface CalibrationCandidate {
+  index: number;
+  parameters: Record<string, number>;
+  run_id?: string | null;
+  run_status?: string | null;
+  evaluation_hash?: string | null;
+  objective?: number | null;
+  failure?: string | null;
+  n_used?: number;
+  n_excluded?: number;
+  duration_s?: number | null;
+  diagnostics?: Diagnostic[];
+}
+
+export interface CalibrationResult {
+  schema_version: string;
+  calibration_hash: string;
+  result_hash: string;
+  experiment_id: string;
+  status: string;
+  stop_reason: string;
+  converged: boolean;
+  best: CalibrationCandidate | null;
+  objective: {
+    metric: string;
+    observation: string;
+    output: string;
+    value: number | null;
+    invalid_objective_sentinel: string;
+  };
+  evaluations_requested: number;
+  evaluations_completed: number;
+  evaluations_invalid: number;
+  iterations: number;
+  wall_seconds: number;
+  identifiability: Record<string, unknown> | null;
+  history: CalibrationCandidate[];
+  diagnostics: Diagnostic[];
+  provenance: Record<string, unknown>;
+  note: string;
+}
+
+export interface CalibrationRef {
+  calibration_id: string;
+  result_hash: string;
+  experiment_id: string;
+  model_id: string;
+  status: string;
+  created_at?: string | null;
+}
+
+export interface CalibrationVerification {
+  calibration_id: string;
+  result_hash: string;
+  ok: boolean;
+  checks: { name: string; status: string; message: string }[];
+  errors: number;
 }

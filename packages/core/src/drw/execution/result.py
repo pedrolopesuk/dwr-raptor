@@ -8,6 +8,7 @@ from drw.numerics.delta import Comparison
 from drw.schema.experiment import ExperimentSpec, RunEstimate
 from drw.schema.model import ModelRef, ModelSchema
 from drw.schema.result import Diagnostic, RunRecord
+from drw.uncertainty import UncertaintySummary
 
 __all__ = ["ExperimentResult"]
 
@@ -30,6 +31,7 @@ class ExperimentResult:
     warnings: tuple[Diagnostic, ...] = ()
     started_at: str | None = None
     finished_at: str | None = None
+    uncertainty: UncertaintySummary | None = None
 
     @property
     def baseline(self) -> RunRecord:

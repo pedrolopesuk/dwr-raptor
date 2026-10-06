@@ -138,3 +138,24 @@ def test_verification_is_read_only(manifest):
         if p.is_file()
     }
     assert after == before
+
+
+def test_empty_files_list_is_rejected(manifest):
+    """F1: a manifest declaring no artifacts must never verify successfully."""
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    data["files"] = []
+    manifest.write_text(json.dumps(data), encoding="utf-8")
+
+    with pytest.raises(EvidenceVerificationError):
+        verify_evidence(manifest)
+
+
+def test_directory_listing_error_is_controlled(manifest, monkeypatch):
+    """F3: an OSError while listing the package is a controlled verification error."""
+
+    def boom(self):
+        raise OSError("simulated listing failure")
+
+    monkeypatch.setattr("pathlib.Path.iterdir", boom)
+    with pytest.raises(EvidenceVerificationError):
+        verify_evidence(manifest)

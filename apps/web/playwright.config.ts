@@ -14,7 +14,10 @@ import { defineConfig, devices } from "@playwright/test";
  */
 
 const PORT = 3111;
-const WORKSPACE = mkdtempSync(path.join(tmpdir(), "drw-pw-"));
+const WORKSPACE = process.env.DRW_WORKSPACE ?? mkdtempSync(path.join(tmpdir(), "drw-pw-"));
+// Share the isolated workspace with worker processes so tests can seed files
+// (e.g. a CSV in dataset-sources/) that the server will read.
+process.env.DRW_WORKSPACE = WORKSPACE;
 
 export default defineConfig({
   testDir: "./e2e",

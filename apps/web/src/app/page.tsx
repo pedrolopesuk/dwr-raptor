@@ -1,5 +1,5 @@
-import { Workspace } from "@/components/Workspace";
+import { RootRedirect } from "@/components/shell/RootRedirect";
 
 export default function Page() {
-  return <Workspace />;
+  return <RootRedirect />;
 }

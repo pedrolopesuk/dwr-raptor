@@ -17,6 +17,22 @@ deliberately deferred.
 | [0009](./ADR-0009-progress-jobs.md) | Progress reporting via a local job journal |
 | [0010](./ADR-0010-projects.md) | A minimal project entity |
 | [0011](./ADR-0011-ai-planner.md) | The AI planner is a proposal-only, optional layer |
+| [0012](./ADR-0012-model-agnostic-experiments.md) | Model-agnostic experiment creation reuses the demo builder |
+| [0013](./ADR-0013-reproduction-tolerance-policy.md) | The reproduction check requires explicit tolerances |
+| [0014](./ADR-0014-global-sensitivity.md) | Global sensitivity via a Saltelli coupled design and Jansen/Saltelli estimators |
+| [0015](./ADR-0015-identifiability.md) | Local parameter identifiability via a normalized finite-difference sensitivity |
+| [0016](./ADR-0016-observation-model.md) | Universal observation/data model |
+| [0017](./ADR-0017-dataset-storage.md) | Dataset storage, content addressing & integrity |
+| [0018](./ADR-0018-csv-adapter.md) | CSV observation adapter & dataset import |
+| [0019](./ADR-0019-observation-model-evaluation.md) | Observation ↔ model evaluation |
+| [0020](./ADR-0020-dataset-identity.md) | Dataset scientific identity vs artifact identity |
+| [0021](./ADR-0021-evaluation-alignment.md) | Evaluation alignment & datetime bridge |
+| [0022](./ADR-0022-calibration-architecture.md) | Calibration architecture |
+| [0023](./ADR-0023-objective-semantics.md) | Objective semantics |
+| [0024](./ADR-0024-optimizer-selection.md) | Optimizer selection |
+| [0025](./ADR-0025-calibration-identity-and-persistence.md) | Calibration identity, provenance & persistence |
+| [0026](./ADR-0026-calibration-failure-semantics.md) | Calibration failure semantics |
+| [0027](./ADR-0027-calibration-boundaries.md) | Calibration boundaries (validation & parameter uncertainty) |
 
 See also:
 

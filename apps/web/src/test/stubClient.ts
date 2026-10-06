@@ -9,13 +9,25 @@ import { vi } from "vitest";
 
 import type { DrwClient } from "@/lib/client";
 import type {
+  CalibrationCandidate,
+  CalibrationResult,
+  CsvInspection,
+  DatasetDetail,
+  DatasetImportResult,
+  DatasetSummary,
+  DatasetVerification,
+  EvaluationResult,
   ExperimentData,
   ExperimentSpec,
+  IdentifiabilityReport,
   ModelCapabilities,
   ModelSchema,
   ModelSummary,
   Project,
+  ReproduceReport,
   RunRecord,
+  SobolReport,
+  UncertaintySummary,
   ValidationResult,
 } from "@/lib/types";
 
@@ -56,6 +68,14 @@ export const capabilities: ModelCapabilities = {
   analysis_methods: ["delta", "relative_delta"],
   sensitivity: "oat",
   isolation: "subprocess",
+  global_sensitivity: { default_sample_count: 32, max_evaluations: 4096 },
+  identifiability: {
+    method: "central_finite_difference_sensitivity_svd",
+    default_step_scale: 0.001,
+    condition_threshold: 1_000_000,
+    max_evaluations: 4096,
+    timeseries_features: ["max", "min", "mean", "final", "argmax_t"],
+  },
   limitations: [],
 };
 
@@ -92,6 +112,14 @@ export const oscillatorCapabilities: ModelCapabilities = {
   analysis_methods: ["delta", "relative_delta"],
   sensitivity: "oat",
   isolation: "subprocess",
+  global_sensitivity: { default_sample_count: 32, max_evaluations: 4096 },
+  identifiability: {
+    method: "central_finite_difference_sensitivity_svd",
+    default_step_scale: 0.001,
+    condition_threshold: 1_000_000,
+    max_evaluations: 4096,
+    timeseries_features: ["max", "min", "mean", "final", "argmax_t"],
+  },
   limitations: [],
 };
 
@@ -123,6 +151,14 @@ export const lorenzCapabilities: ModelCapabilities = {
   analysis_methods: ["delta", "relative_delta"],
   sensitivity: "oat",
   isolation: "subprocess",
+  global_sensitivity: { default_sample_count: 32, max_evaluations: 4096 },
+  identifiability: {
+    method: "central_finite_difference_sensitivity_svd",
+    default_step_scale: 0.001,
+    condition_threshold: 1_000_000,
+    max_evaluations: 4096,
+    timeseries_features: ["max", "min", "mean", "final", "argmax_t"],
+  },
   limitations: [],
 };
 
@@ -169,6 +205,361 @@ export function multiModelClient(overrides: Partial<DrwClient> = {}): DrwClient 
   });
 }
 
+export function reproduceReport(overrides: Partial<ReproduceReport> = {}): ReproduceReport {
+  const output = {
+    output: "prey",
+    unit: "count",
+    comparable: true,
+    status: "identical" as const,
+    identical: true,
+    passes_tolerance: true,
+    alignment: "exact",
+    interpolated: false,
+    shape_compatible: true,
+    max_abs_delta: 0,
+    max_abs_relative_delta: 0,
+    mae: 0,
+    rmse: 0,
+    n_points: 301,
+    valid_points: 301,
+    non_finite_points: 0,
+    warnings: [],
+    note: null,
+  };
+  return {
+    experiment_id: "exp-000000000000",
+    verdict: "identical",
+    numerical: "identical",
+    tolerances: { rtol: 1e-9, atol: 1e-12 },
+    provenance: {
+      spec_hash_stored: "a".repeat(64),
+      spec_hash_current: "a".repeat(64),
+      spec_hash_match: true,
+      model_hash_stored: "b".repeat(64),
+      model_hash_current: "b".repeat(64),
+      model_hash_match: true,
+      environment_hash_stored: "c".repeat(64),
+      environment_hash_current: "c".repeat(64),
+      environment_hash_match: true,
+      differences: [],
+    },
+    reference_run_ids: ["exp-000000000000-r0000", "exp-000000000000-r0001"],
+    fresh_run_ids: ["exp-000000000000-r0000", "exp-000000000000-r0001"],
+    runs: [
+      {
+        index: 0,
+        label: "baseline",
+        reference_run_id: "exp-000000000000-r0000",
+        fresh_run_id: "exp-000000000000-r0000",
+        reference_status: "succeeded",
+        fresh_status: "succeeded",
+        comparable: true,
+        identical: true,
+        passes_tolerance: true,
+        outputs: [output],
+        warnings: [],
+      },
+      {
+        index: 1,
+        label: "variant",
+        reference_run_id: "exp-000000000000-r0001",
+        fresh_run_id: "exp-000000000000-r0001",
+        reference_status: "succeeded",
+        fresh_status: "succeeded",
+        comparable: true,
+        identical: true,
+        passes_tolerance: true,
+        outputs: [output],
+        warnings: [],
+      },
+    ],
+    warnings: [],
+    fresh_runs_persisted: false,
+    ...overrides,
+  };
+}
+
+export function uncertaintySummary(
+  overrides: Partial<UncertaintySummary> = {},
+): UncertaintySummary {
+  return {
+    schema_version: "1.0.0",
+    sampling_method: "latin_hypercube",
+    seed: 5,
+    requested_variants: 3,
+    valid_output_samples: 3,
+    excluded_output_samples: 0,
+    quantiles: [5, 50, 95],
+    quantile_method: "linear",
+    outputs: [
+      {
+        output: "peak_prey",
+        unit: "count",
+        requested_variants: 3,
+        valid_samples: 3,
+        excluded_samples: 0,
+        exclusions: {},
+        sufficient: true,
+        mean: 2,
+        std: 1,
+        minimum: 1,
+        maximum: 3,
+        p05: 1.1,
+        p50: 2,
+        p95: 2.9,
+        note: null,
+      },
+    ],
+    note: null,
+    descriptive_only: true,
+    ...overrides,
+  };
+}
+
+export function sobolReport(overrides: Partial<SobolReport> = {}): SobolReport {
+  return {
+    model_id: "predator-prey",
+    output: "peak_prey",
+    estimator: "saltelli2010_first_order+jansen1999_total_order",
+    sample_count: 8,
+    seed: 3,
+    dimensions: 2,
+    factors: ["alpha", "beta"],
+    evaluations_requested: 32,
+    evaluations_completed: 32,
+    variance: 4.5,
+    inconclusive: false,
+    reasons: [],
+    results: [
+      { name: "alpha", s1: 0.4, st: 0.5, s1_ci: [0.3, 0.5], st_ci: [0.4, 0.6] },
+      { name: "beta", s1: 0.3, st: 0.4, s1_ci: [0.2, 0.4], st_ci: [0.3, 0.5] },
+    ],
+    bootstrap_resamples: 20,
+    independent_inputs_assumed: true,
+    note: "finite-sample estimates; theoretical bounds are not imposed.",
+    ...overrides,
+  };
+}
+
+export function identifiabilityReport(
+  overrides: Partial<IdentifiabilityReport> = {},
+): IdentifiabilityReport {
+  return {
+    model_id: "predator-prey",
+    experiment_id: "exp-000000000000",
+    method: "central_finite_difference_sensitivity_svd",
+    factors: ["beta", "predator0"],
+    factors_detail: [
+      {
+        name: "beta", unit: "1/(count*s)", baseline_value: 0.4, step: 0.0004,
+        lower: 0.05, upper: 2.0, plus_value: 0.4004, minus_value: 0.3996, valid: true, note: null,
+      },
+      {
+        name: "predator0", unit: "count", baseline_value: 5.0, step: 0.005,
+        lower: 0.1, upper: 50.0, plus_value: 5.005, minus_value: 4.995, valid: true, note: null,
+      },
+    ],
+    targets: [
+      {
+        output: "prey", feature: "max", unit: "count", baseline_value: 13.67,
+        scale: 13.67, informative: true, note: null,
+      },
+      {
+        output: "prey", feature: "argmax_t", unit: "count", baseline_value: 9.9,
+        scale: 9.9, informative: false, note: "no local response to the selected factors",
+      },
+    ],
+    dimensions: 2,
+    n_targets: 4,
+    step_scale: 0.001,
+    absolute_step: 0.000001,
+    rank_tolerance: 0.00025,
+    condition_threshold: 1_000_000,
+    correlation_threshold: 0.9,
+    evaluations_requested: 5,
+    evaluations_completed: 5,
+    singular_values: [83.4588, 7.39e-9],
+    numerical_rank: 1,
+    condition_number: null,
+    directions: [
+      {
+        index: 0, singular_value: 83.4588, condition_index: 1.0, problematic: false,
+        dominant: ["beta", "predator0"], weights: { beta: 0.971, predator0: 0.237 },
+      },
+      {
+        index: 1, singular_value: 7.39e-9, condition_index: null, problematic: true,
+        dominant: ["beta"], weights: { beta: 0.971, predator0: 0.237 },
+      },
+    ],
+    factor_correlations: [{ first: "beta", second: "predator0", correlation: 1.0 }],
+    verdict: "rank-deficient",
+    inconclusive: false,
+    reasons: [],
+    normalized: true,
+    local_only: true,
+    note: "Local (linearised) structural identifiability at this baseline and these targets.",
+    ...overrides,
+  };
+}
+
+export function csvInspection(overrides: Partial<CsvInspection> = {}): CsvInspection {
+  return {
+    adapter_id: "csv",
+    adapter_version: "1.0.0",
+    filename: "lightcurve.csv",
+    delimiter: ",",
+    has_header: true,
+    row_count: 3,
+    columns: [
+      {
+        column: "time", index: 0, kind: "datetime", missing_count: 0, non_finite_count: 0,
+        sample_values: ["2026-01-01T00:00:00Z"], suggested_role: "coordinate",
+        suggested_name: "time", suggested_uncertainty_for: null, note: null,
+      },
+      {
+        column: "flux", index: 1, kind: "float", missing_count: 0, non_finite_count: 0,
+        sample_values: ["12.3"], suggested_role: "measurement",
+        suggested_name: "flux", suggested_uncertainty_for: null, note: null,
+      },
+      {
+        column: "flux_err", index: 2, kind: "float", missing_count: 0, non_finite_count: 0,
+        sample_values: ["0.1"], suggested_role: "uncertainty",
+        suggested_name: "flux_err", suggested_uncertainty_for: "flux", note: null,
+      },
+    ],
+    preview: [{ time: "2026-01-01T00:00:00Z", flux: "12.3", flux_err: "0.1" }],
+    diagnostics: [],
+    advisory: "detections are advisory only",
+    ...overrides,
+  };
+}
+
+const HASH = "a".repeat(64);
+
+export function datasetSummary(overrides: Partial<DatasetSummary> = {}): DatasetSummary {
+  return {
+    dataset_id: "ds-abcabcabcabc",
+    content_hash: HASH,
+    name: "lightcurve",
+    created_at: "2026-01-01T00:00:00+00:00",
+    source_kind: "file",
+    ...overrides,
+  };
+}
+
+export function datasetVerification(overrides: Partial<DatasetVerification> = {}): DatasetVerification {
+  return {
+    dataset_id: "ds-abcabcabcabc",
+    content_hash: HASH,
+    ok: true,
+    errors: 0,
+    checks: [{ name: "meta", status: "ok", message: "" }],
+    extra_files: [],
+    note: "verification is a consistency check",
+    ...overrides,
+  };
+}
+
+export function datasetDetail(overrides: Partial<DatasetDetail> = {}): DatasetDetail {
+  return {
+    ref: { dataset_id: "ds-abcabcabcabc", content_hash: HASH, name: "lightcurve", created_at: "2026-01-01T00:00:00+00:00" },
+    dataset: {
+      schema_version: "1.0.0",
+      name: "lightcurve",
+      description: "",
+      labels: {},
+      provenance: {
+        source_kind: "file",
+        imported_at: "2026-01-01T00:00:00+00:00",
+        dataset_version: "1.0.0",
+        adapter: { id: "csv", version: "1.0.0" },
+        original_filename: "lightcurve.csv",
+        source_sha256: "b".repeat(64),
+        notes: "",
+        license: null,
+      },
+      observation_set: {
+        coordinates: ["time"],
+        variables: [
+          { name: "time", kind: "datetime", role: "coordinate", unit: null, depends_on: [], uncertainty: null, quality: null, description: "" },
+          { name: "flux", kind: "float", role: "measurement", unit: "Jy", depends_on: ["time"], uncertainty: { type: "std", column: "flux_err" }, quality: null, description: "" },
+        ],
+        columns: { time: ["2026-01-01T00:00:00+00:00"], flux: [12.3] },
+      },
+      files: [],
+      content_hash: HASH,
+      dataset_id: "ds-abcabcabcabc",
+    },
+    verification: datasetVerification(),
+    ...overrides,
+  };
+}
+
+export function datasetImportResult(
+  overrides: Partial<DatasetImportResult> = {},
+): DatasetImportResult {
+  return {
+    ref: { dataset_id: "ds-abcabcabcabc", content_hash: HASH, name: "lightcurve", created_at: "2026-01-01T00:00:00+00:00" },
+    dry_run: false,
+    stored: true,
+    verification: datasetVerification(),
+    ...overrides,
+  };
+}
+
+export function evaluationResult(overrides: Partial<EvaluationResult> = {}): EvaluationResult {
+  return {
+    eval_schema_version: "1.0.0",
+    evaluation_hash: "e".repeat(64),
+    dataset: {
+      dataset_id: "ds-abcabcabcabc", content_hash: HASH, name: "lightcurve",
+      created_at: "2026-01-01T00:00:00+00:00",
+    },
+    experiment_id: "exp-000000000000",
+    run_id: "exp-000000000000-r0000",
+    attempt: 1,
+    model_ref: { model_id: "predator-prey", version: "1.0.0" },
+    model_hash: "f".repeat(64),
+    parameter_snapshot: {},
+    mapping: {},
+    mapping_hash: "a".repeat(64),
+    config: { metrics: ["mean_residual", "mae", "rmse", "max_abs_error"] },
+    pairs: [
+      {
+        observation: "peak_prey",
+        output: "peak_prey",
+        kind: "scalar",
+        unit: "count",
+        alignment: "exact",
+        tolerance: 0,
+        interpolated: false,
+        points: [
+          {
+            observation_index: 0, model_index: null, coordinate: null, observed: 13.0,
+            predicted: 14.0, residual: 1.0, relative_residual: null, sigma: null,
+            normalized_residual: null,
+          },
+        ],
+        exclusions: [{ observation_index: 1, reason: "missing", detail: "row 1 is missing" }],
+        usable_count: 1,
+        excluded_count: 1,
+        exclusion_counts: { missing: 1 },
+        metrics: { mean_residual: 1.0, mae: 1.0, rmse: 1.0, max_abs_error: 1.0 },
+        diagnostics: [],
+      },
+    ],
+    total_usable: 1,
+    total_excluded: 1,
+    ok: true,
+    diagnostics: [],
+    provenance: {
+      spec_hash: "1".repeat(64), model_hash: "f".repeat(64), environment_hash: "2".repeat(64),
+      dataset_content_hash: HASH, mapping_hash: "a".repeat(64),
+    },
+    ...overrides,
+  };
+}
+
 export const defaultProject: Project = {
   project_id: "default",
   name: "Sample: predator-prey",
@@ -176,6 +567,47 @@ export const defaultProject: Project = {
   model_id: "predator-prey",
   created_at: "2026-01-01T00:00:00+00:00",
 };
+
+export function calibrationResult(overrides: Partial<CalibrationResult> = {}): CalibrationResult {
+  const candidate: CalibrationCandidate = {
+    index: 0,
+    parameters: { alpha: 1.1 },
+    run_id: "exp-000000000000-r0000",
+    run_status: "succeeded",
+    evaluation_hash: "a".repeat(64),
+    objective: 0.0,
+    failure: null,
+    n_used: 1,
+    n_excluded: 0,
+    duration_s: 0.01,
+    diagnostics: [],
+  };
+  return {
+    schema_version: "1.0.0",
+    calibration_hash: "c".repeat(64),
+    result_hash: "d".repeat(64),
+    experiment_id: "exp-000000000000",
+    status: "converged",
+    stop_reason: "optimizer_converged",
+    converged: true,
+    best: candidate,
+    objective: {
+      metric: "rmse", observation: "peak_prey", output: "peak_prey", value: 0.0,
+      invalid_objective_sentinel: "+inf",
+    },
+    evaluations_requested: 100,
+    evaluations_completed: 3,
+    evaluations_invalid: 0,
+    iterations: 2,
+    wall_seconds: 0.5,
+    identifiability: null,
+    history: [candidate],
+    diagnostics: [],
+    provenance: { scipy_version: "1.11.0" },
+    note: "Calibration reports a point estimate; not a statement of parameter uncertainty.",
+    ...overrides,
+  };
+}
 
 export const okValidation: ValidationResult = {
   ok: true,
@@ -245,6 +677,10 @@ export function stubClient(overrides: Partial<DrwClient> = {}): DrwClient {
     evidence: vi.fn(),
     exportEvidence: vi.fn().mockResolvedValue({ zip: "evidence.zip", path: "/tmp/evidence.zip" }),
     sensitivity: vi.fn().mockResolvedValue({ metric: "peak_prey", perturbation: "+10%", ranking: [] }),
+    uncertainty: vi.fn().mockResolvedValue(uncertaintySummary()),
+    globalSensitivity: vi.fn().mockResolvedValue(sobolReport()),
+    identifiability: vi.fn().mockResolvedValue(identifiabilityReport()),
+    reproduceExperiment: vi.fn().mockResolvedValue(reproduceReport()),
     listProjects: vi.fn().mockResolvedValue([defaultProject]),
     createProject: vi.fn().mockResolvedValue({
       project_id: "proj-aaaaaaaaaaaa",
@@ -269,6 +705,14 @@ export function stubClient(overrides: Partial<DrwClient> = {}): DrwClient {
       note: "No LLM provider is configured; the deterministic rule-based planner is used.",
     }),
     environment: vi.fn().mockResolvedValue({ environment: { python_version: "3.14.6" }, environment_hash: "env" }),
+    listDatasetSources: vi.fn().mockResolvedValue([{ filename: "lightcurve.csv", size_bytes: 120 }]),
+    inspectDataset: vi.fn().mockResolvedValue(csvInspection()),
+    importDataset: vi.fn().mockResolvedValue(datasetImportResult()),
+    listDatasets: vi.fn().mockResolvedValue([datasetSummary()]),
+    describeDataset: vi.fn().mockResolvedValue(datasetDetail()),
+    verifyDataset: vi.fn().mockResolvedValue(datasetVerification()),
+    evaluate: vi.fn().mockResolvedValue(evaluationResult()),
+    calibrate: vi.fn().mockResolvedValue({ calibration: calibrationResult() }),
   };
   return { ...base, ...overrides };
 }

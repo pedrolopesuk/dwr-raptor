@@ -4,6 +4,456 @@ All notable changes to this project are documented in this file. The project
 follows a milestone-oriented changelog; entries record *scientific* behaviour
 changes explicitly (see the spec's AI coding loop, section 12.4).
 
+## [Milestone 12B] - Calibration / parameter estimation
+
+### Added
+
+- **Calibration orchestration layer** (`drw/schema/calibration.py`,
+  `drw/calibration/`, `drw/calibration_store.py`). It drives the existing
+  `Runner` (one single-run `ExperimentSpec` per candidate) and reads its objective
+  **only** from M12A `evaluate_run`. It never executes a model directly, never
+  re-implements comparison, and performs no inference.
+- **`CalibrationConfig`** (request): free `ParameterSelection`s (float, finite
+  `lower < upper`, selected bounds must stay within the model's declared bounds,
+  explicit/`nominal` initial — a midpoint is never chosen silently), fixed
+  parameters, objective, optimizer, budget, seed, execution template, `DatasetRef`,
+  `ObservationMapping`, `EvaluationConfig`, identifiability mode and
+  `data_role = "calibration"`. Model-aware validation and resolution via
+  `validate_calibration_config` / `resolve_calibration`.
+- **Objective oracle** (`drw/calibration/objective.py`): selects exactly one
+  mapping pair and one M12A metric (RMSE default; MAE, max_abs_error,
+  mean_residual, relative_*, weighted_rmse, chi_square), minimise-only. Invalid
+  evaluations (M12A `ok=false`, `null`/non-finite metric) yield `objective=None`
+  plus an explicit failure code — never a fabricated value.
+- **Optimizers** (`drw/calibration/optimizers.py`): **Powell** (default, bounded,
+  derivative-free), **Differential Evolution** (opt-in global, seeded,
+  single-worker, `polish=False`) and **Random Search** (deterministic baseline).
+- **Serial execution loop** (`drw/calibration/loop.py`): validates each candidate,
+  builds a throwaway single-run spec, runs it through `Runner`, evaluates it with
+  `evaluate_run`, extracts the objective and records every candidate with its run
+  id, status, evaluation hash, objective, `n_used`/`n_excluded`, duration and
+  failure code. `calibrate` / `calibrate_for_experiment`.
+- **Budgets**: `max_evaluations` is the authoritative **hard** cap owned by the
+  loop (no optimizer can exceed it), plus `max_wall_seconds`, a per-run
+  `timeout_s` and optional `max_failed`; cancellation via a `threading.Event`.
+- **Failure semantics**: reject-and-record; invalid candidates store
+  `objective=null` with a code; `+inf` is an optimizer-interface sentinel only
+  (disclosed as `invalid_objective_sentinel`). All-failed → `status="failed"`,
+  no best. Budget exhaustion → `budget_exhausted`, `converged=false`. Convergence
+  → `converged`, but never statistical certainty.
+- **`CalibrationResult`** (outcome): request vs execution vs result vs
+  convergence vs history vs diagnostics vs provenance vs **mandatory scientific
+  disclosure**. Content-addressed `result_hash` (wall-clock excluded) and a
+  deterministic `calibration_hash` (request identity).
+- **CalibrationStore** (`drw/calibration_store.py`): content-addressed, append-only
+  `<workspace>/calibrations/<calibration_id>/{config,result,history,provenance,manifest}.json`,
+  idempotent identical save, conflicting-payload rejection, hash verification.
+  **No `EvidenceManifest` change; no persistence in the pure core.**
+- **Advisory identifiability** (M10): `off`/`warn` (default)/`require`; never an
+  optimizer constraint.
+- **CLI** `drw calibrate <experiment_id> --config <json> [--dry-run] [--persist]
+  [--json] [--workspace]`; **bridge ops** `calibrate`, `list_calibrations`,
+  `get_calibration`, `verify_calibration`; **web** "Calibrate against dataset"
+  panel (free-parameter bounds/initials, dataset + mapping, objective, optimizer,
+  budgets, seed, identifiability mode, result with best parameters, objective
+  history, status, invalid count, diagnostics, disclosure); additive
+  `capabilities.calibration`.
+- Tests: contract/identity (35), objective oracle (11), scientific benchmarks
+  (17: scalar/known-optimum/bounded/scaling/determinism/multi-parameter/noisy/
+  weighted/partial-failure/timeout/invalid-state/non-identifiable/multi-minima/
+  convergence-failure/budget-cap/reproducibility), loop mechanics (8), store (7),
+  CLI/bridge integration (5), plus web component + Playwright.
+
+### Notes
+
+- **Calibration is not validation, not Bayesian inference, and not parameter
+  uncertainty**; convergence is not certainty (ADR-0027).
+- **Unmodified**: `ExperimentSpec`, `ModelSchema`, `Runner`, `RunRecord`/
+  `ModelResult`/`OutputValue`, `EvidenceManifest`, M11 `Dataset`/`ObservationSet`/
+  `ObservationMapping`/`DatasetStore`/`science_hash`, M12A `evaluate`/
+  `evaluate_run`/`EvaluationConfig`/`evaluation_hash`, and M10 identifiability.
+- Zero new dependencies (`scipy` was already a core dependency).
+- Reference: ADR-0022…ADR-0027.
+
+## [Milestone 12A] - Observation <-> model evaluation
+
+### Added
+
+- **Execution-free evaluation** (`drw/evaluation.py`, `drw/schema/evaluation.py`).
+  Evaluates an already-produced model run against a dataset under an M11
+  `ObservationMapping` and an explicit `EvaluationConfig`. It never launches the
+  `Runner`, never changes parameters and performs no inference.
+- **`EvaluationConfig`**: requested metrics, residual modes
+  (`raw`/`relative`/`normalized`), alignment (`exact` or **opt-in linear
+  interpolate**), tolerance, relative epsilon, datetime `time_origin`, and an
+  explicit `degrees_of_freedom` (required only for `reduced_chi_square`; never
+  estimated).
+- **Residuals:** raw `r = y_model − y_obs`; opt-in relative only where
+  `|y_obs| > relative_epsilon`; opt-in normalized `r/σ` only for `std`/`precision`
+  with finite `σ > 0`. No fabricated uncertainty; `stderr`/`asymmetric`/`interval`
+  are never collapsed into a symmetric σ.
+- **Metrics:** `n_used`, `n_excluded`, `mean_residual`, `mae`, `rmse`,
+  `max_abs_error`, plus optional `relative_*`, `weighted_rmse`, `chi_square`,
+  `reduced_chi_square`, all over usable aligned pairs with exclusion counts.
+- **Datetime bridge:** a datetime coordinate is converted to elapsed seconds
+  relative to an explicit `time_origin`, and the model axis (a time unit) to
+  seconds; no astronomical time systems.
+- **One comparison abstraction** (aligned points): scalar = 1 point,
+  timeseries = N points, a vector = several pairs; `matrix`/`categorical` outputs
+  fail `output_kind_unsupported`.
+- **Fail-closed** (`ok=false`, no metrics) on unknown variable/output, non-numeric
+  observation, unsupported kind, shape/unit problems, alignment failure,
+  non-finite model output, invalid uncertainty, and no usable observations.
+  Exclusions carry reasons and observation indices; nothing is dropped silently.
+- **Content-addressed `EvaluationResult`** (`evaluation_hash`, canonical hashing)
+  carrying dataset/run/model/mapping/config + provenance (spec/model/environment/
+  dataset/mapping hashes). **On-demand only — not persisted.**
+- **Derived `science_hash`** (`drw.observations.science_hash`): a dataset's
+  scientific-content identity independent of provenance (ADR-0020). Additive; it
+  never replaces or alters `content_hash` and is not stored.
+- **CLI** `drw evaluate <experiment_id> --mapping <json> [--run ...] [--metric ...]
+  [--relative] [--weighted] [--interpolate] [--tolerance] [--time-origin] [--dof]
+  [--dry-run] [--json] [--workspace]`; **bridge op** `evaluate` (read-only); web
+  "Evaluate against dataset" panel (metrics table, observed-vs-predicted plot,
+  exclusions, provenance).
+- Tests: unit (config, residuals, metrics, units, alignment, datetime,
+  missing/quality, determinism, hashing, science hash), scientific benchmarks
+  (perfect/offset/perturbation/timeseries/interpolation/unit conversion/
+  incompatible units/missing/uncertainty/repeated coordinates/datetime/execution
+  failure/non-finite/unsupported kind/mapping mismatch/determinism), and
+  CLI/bridge integration.
+
+### Notes
+
+- **Evaluation is read-only and execution-free**; it is **not** calibration, not
+  validation and not a scientific conclusion (see ADR-0019).
+- **No persistence**: no `evaluation.json`, no `EvaluationStore`, no
+  `EvidenceManifest` change. **No inference**: no likelihood, posterior,
+  parameter estimation or `scipy.optimize`.
+- **Unmodified**: `ExperimentSpec`, `ModelSchema`, `Runner`, `EvidenceManifest`
+  and M11 dataset/store/observation semantics. `ObservationMapping` was not
+  extended (alignment lives in `EvaluationConfig`).
+- Zero new dependencies.
+- Reference: ADR-0019 (evaluation), ADR-0020 (dataset identity), ADR-0021
+  (alignment & datetime bridge).
+
+## [Milestone 11C] - CSV dataset ingestion & inspection
+
+### Added
+
+- **CSV observation adapter** (`drw/adapters/`). An `ObservationAdapter` protocol
+  plus a registry; the built-in `csv` adapter (v1.0.0) exposes `can_handle`,
+  `inspect` (advisory) and `read` (explicit configuration -> validated dataset).
+  Zero new dependency (stdlib `csv`).
+- **Advisory inspection.** Column names, inferred primitive kind
+  (int/float/bool/categorical/datetime), row count, preview, missing/non-finite
+  counts, delimiter/header detection, ragged-row/duplicate diagnostics, and
+  candidate coordinate/measurement/uncertainty/quality roles. Detection is
+  **advisory**; nothing scientific is inferred.
+- **Explicit import configuration** (`CsvImportConfig`/`ColumnConfig`): role,
+  name, kind, unit, `depends_on` coordinates, uncertainty companion(s)/inline,
+  quality flag column, per-column missing codes, datetime format, plus dataset
+  name/description/version/labels, delimiter/header overrides, global missing
+  codes, and explicit non-finite/invalid policies (`error` by default).
+- **Missing/invalid/non-finite semantics.** Empty cells and configured sentinels
+  become explicit missing; non-finite and type-invalid cells fail with diagnostics
+  by default (never silently rewritten); quality flags never delete rows.
+- **ISO-8601 datetime** parsing via the standard library (no astronomical time
+  systems).
+- **`import_csv`** is the single parse -> validate -> `DatasetStore.save` path
+  (shared by CLI and bridge); `dry_run` validates without persisting; a failed
+  import leaves no partial dataset.
+- **CLI:** `drw dataset inspect|import|list|describe|verify` (with `--json`,
+  `--missing-code`, `--no-header`, `--delimiter`, `--dry-run`, `--config`,
+  `--workspace`).
+- **Bridge ops:** `list_dataset_sources`, `inspect_dataset`, `import_dataset`
+  (`dry_run` supported), `list_datasets`, `describe_dataset`/`get_dataset`,
+  `verify_dataset`. Files are read only from `<workspace>/dataset-sources/`, with
+  path containment enforced; no arbitrary filesystem access.
+- **Web:** "Import a dataset (CSV)" panel (select source -> inspect -> preview ->
+  per-column role/name/unit/coordinates/uncertainty/quality -> Validate -> Import
+  -> immutable `DatasetRef`) and a "Datasets" panel (list with id/name/created/
+  hash/source kind, detail with variables/units/uncertainty/provenance/hash/
+  verification, and an explicit Verify action).
+- **Fixtures + tests:** five domain CSV fixtures (astrophysics, space, physics,
+  biology, climate); CSV adapter unit tests, CLI/bridge integration tests, web
+  component tests and Chromium E2E scenarios.
+
+### Notes
+
+- **Import is the only mutating dataset operation**; `inspect`/`list`/`describe`/
+  `verify` are read-only.
+- **Observation integrity only** - importing a dataset does not establish model
+  validity, calibration or a scientific conclusion; the UI/Docs say so.
+- No new dependency. No change to `ExperimentSpec`, `ModelSchema`,
+  `EvidenceManifest`, the experiment store, Runner or M10 analysis. `DatasetStore`
+  gained a read-only `provenance` accessor.
+- Non-CSV formats (Parquet/HDF5/NetCDF/FITS), N-D arrays, interpolation/
+  resampling and calibration remain out of scope (M11D/M12).
+- Reference: `docs/architecture/ADR-0018-csv-adapter.md`.
+
+## [Milestone 11B] - Dataset storage, provenance & integrity
+
+### Added
+
+- **`drw/dataset_store.py` — immutable, content-addressed dataset storage.**
+  `DatasetStore` with `save`, `load`, `list`, `exists`, `ref`, `resolve` and
+  `verify`, reusing `ExperimentStore`'s id-validation and path-containment
+  discipline. Layout: `<workspace>/datasets/<dataset_id>/{meta,schema,data,
+  provenance}.json` + `files/`.
+- **Append-only semantics.** Saving the same dataset again is idempotent;
+  saving a *different* dataset under an existing id raises `DatasetExistsError`
+  and never overwrites; there is no update/destructive API.
+- **Content addressing preserved.** The full `content_hash` is authoritative;
+  `dataset_id = "ds-" + hash[:12]`; `save`/`load`/`verify` recompute and check
+  identity, and refuse short-id hash-prefix collisions.
+- **`DatasetRef`** now carries an optional, non-identity `created_at` and is
+  reconstructed by `ref`/`list`/`resolve` (lookup by authoritative content hash).
+- **`DatasetStore.verify(dataset_id)`** returns a structured
+  `DatasetVerification` (per-check `ok`/`missing`/`unreadable`/`invalid`/
+  `mismatch`/`not_packaged`): required files present and readable, dataset
+  reconstructs, `meta.dataset_id` matches the directory, stored `content_hash`
+  matches the recomputed content, the id is the short hash, `DatasetFile`
+  metadata is valid, and any **packaged** file matches its declared SHA-256/size.
+  Corruption is never silently repaired.
+- **Packaged vs external files.** A referenced-but-absent file is reported
+  `not_packaged` (never falsely verified); `package_file` copies a local file into
+  `files/` only when its bytes match the declared metadata and never overwrites
+  (a portability primitive, not an adapter).
+- Tests: save/load round trip, idempotency, overwrite/collision refusal,
+  corruption of each file, wrong hash/id, replaced content, missing files,
+  refs/resolve, deterministic listing, empty/multiple stores, synthetic/manual/
+  derived datasets, `DatasetFile` metadata, packaged-file hash verification,
+  packaged-file tamper, path traversal, invalid ids, in-memory-mutation isolation,
+  no-silent-repair, and the one-changed-value identity test.
+
+### Notes
+
+- **Storage only.** No CSV/import adapters, no web/CLI/bridge, no calibration, no
+  N-D arrays, no new dependency, no database/cloud. `ExperimentStore`,
+  `EvidenceManifest` and the evidence layout are unchanged.
+- Verification proves stored bytes match the declared content/identity - it is
+  **not** model validity, calibration or a scientific conclusion.
+- Reference: `docs/architecture/ADR-0017-dataset-storage.md`.
+
+## [Milestone 11A] - Scientific observation contract
+
+### Added
+
+- **Universal, domain-agnostic observation model** (`drw/schema/observation.py`,
+  `drw/observations.py`). `Dataset` → `ObservationSet` → `Variable`, with the
+  **Observation** as a semantic row (not a stored class). Covers astrophysics,
+  space, physics, engineering, biology and climate through the same contract;
+  there is no domain-specific type or field.
+- **Columns with roles** (`coordinate`/`measurement`/`derived`/`uncertainty`/
+  `quality`/`metadata`), optional units, `depends_on` coordinates, and
+  **multi-coordinate** variables. **Repeated coordinate values are allowed**
+  (coordinates do not uniquely identify rows).
+- **Tagged uncertainty** (`none`/`std`/`stderr`/`asymmetric`/`interval`/
+  `precision`), inline or via a companion column; types are never collapsed.
+  Covariance/correlation are deferred (M12).
+- **Explicit missing/quality semantics.** `None` is *missing*; non-finite and
+  type-invalid cells are rejected at construction; quality flags map to
+  `missing/invalid/censored/rejected` (unusable) or `flagged` (usable); usability
+  is reported with reasons and **no row is ever silently deleted**.
+- **Units** reuse `drw.schema.units`; `unit=None` means *unspecified* (distinct
+  from `"dimensionless"`), never inferred. Compatibility is mandatory in a
+  mapping; conversions are explicit and incompatible units hard-fail.
+- **Provenance schema** (`source_kind`/`imported_at`/`dataset_version`/adapter/
+  source id/uri/filename/acquisition time/source sha256/preprocessing/notes/
+  license) - contract only; M11B persists it.
+- **Content-addressed identity.** Full `content_hash` is authoritative;
+  `dataset_id = "ds-" + content_hash[:12]`; `DatasetRef` carries both;
+  `resolve_dataset_id`/`assert_same_dataset` refuse short-id hash-prefix
+  ambiguity.
+- **Standalone `ObservationMapping`** (dataset ref + model ref + pairs + exact
+  alignment + notes) with `validate_mapping` cross-artifact checks and explicit
+  `convert_to_output`. Only `alignment.strategy = "exact"` is supported (with an
+  explicit tolerance); interpolation/resampling/aggregation are M12.
+- Tests: five domain examples, canonical round-trip, deterministic hashing,
+  dataset refs/identity, role/coordinate/column validation, units, uncertainty
+  variants, companion columns, missing/quality, datetime and elapsed time,
+  multi-coordinate variables, mapping validation and exact alignment.
+
+### Notes
+
+- **Contract only.** No storage, no import adapters, no CLI/web, no calibration,
+  no fitting, no residuals/validation, no N-D arrays, no new dependency.
+- Observation integrity is **not** model validity, calibration or a scientific
+  conclusion; the code and docs say so explicitly.
+- Reference: `docs/architecture/ADR-0016-observation-model.md`.
+
+## [Milestone 10] - Local parameter identifiability
+
+### Added
+
+- **On-demand local identifiability study** (`drw/identifiability.py`). Answers
+  whether the declared outputs can *locally* distinguish the parameters near a
+  baseline, and which parameter combinations are effectively indistinguishable.
+  Reuses `Runner`; no numerical engine is duplicated.
+- **Method:** central finite differences estimate the Jacobian
+  `J_ij = (y_i(theta+h) - y_i(theta-h)) / (2h)`; a normalized sensitivity matrix
+  (`S_ij = J_ij * range_j / s_i`, with `s_i` the baseline output magnitude floored
+  by the observed variation) is decomposed by SVD. The report contains singular
+  values, numerical rank, condition number, right-singular directions with
+  dominant parameter weights (including the null space when there are fewer
+  informative targets than parameters) and the strongest parameter-pair
+  correlations. Thresholds are disclosed; the rank tolerance is raised to the
+  central-difference noise floor so a direction weaker than the difference
+  accuracy is not claimed as identifiable.
+- **Targets:** scalar outputs use their value; time-series outputs use a fixed,
+  disclosed feature set (`max, min, mean, final, argmax_t`). **Continuous bounded
+  parameters only**; discrete/boolean/categorical and unbounded parameters are
+  rejected, and bounds are never invented.
+- **Verdicts:** `well-conditioned`, `ill-conditioned`, `rank-deficient`,
+  `inconclusive` (with reasons). **Fail-closed:** a parameter at a bound, a
+  failed/timed-out/missing/non-finite evaluation, or a matrix with no measurable
+  magnitude yields `inconclusive`; nothing is fabricated. Cost is `2p + 1` model
+  evaluations; a 4096-evaluation cap is enforced before execution.
+- **Interfaces:** CLI `drw identifiability <experiment_id> [--factors a,b]
+  [--outputs ...] [--step-scale S] [--seed S] [--rank-tolerance T]
+  [--condition-threshold C]`; bridge op `identifiability` (read-only w.r.t. the
+  store; isolated subprocess evaluations; optional measured progress via the job
+  journal); web "Parameter identifiability" panel. Study limits are exposed
+  additively through `capabilities.identifiability`.
+- Tests: SVD/rank/conditioning, finite-difference step and bound handling,
+  invalid inputs, failure semantics, determinism and step-scale robustness,
+  evaluation cap; scientific ground truth (oscillator `m`/`k` degeneracy,
+  predator-prey `beta`/`predator0` collinearity, a full-rank control, hand
+  matrices); real-model integration with read-only/determinism/CLI-bridge parity;
+  web component and Chromium browser scenarios.
+
+### Notes
+
+- **Local and structural only.** The result is not global identifiability, not
+  practical identifiability from noisy observations, not a calibration, causal
+  claim, or model-validity statement. Passing the analysis does **not** establish
+  that the model is scientifically valid.
+- **Additive and on-demand.** No `ExperimentSpec`/`ModelSchema`, evidence-format,
+  ID, overwrite, delta, OAT, uncertainty, Sobol or reproduce change; no
+  persistence; no new dependency; no parallelism. Calibration, observations/
+  dataset ingestion and optimization are **not** implemented.
+- Domain-agnostic (astrophysics, physics, biology, climate, engineering, ...).
+- Methods note: `docs/methods/identifiability.md`; ADR-0015.
+
+## [Milestone 9] - Global variance-based sensitivity (Sobol indices)
+
+### Added
+
+- **On-demand global sensitivity study** (`drw/global_sensitivity.py`). Estimates
+  first-order `S_i` and total-order `S_Ti` Sobol' indices for a scalar output over
+  independent input factors, reusing `Runner` and the seeded Sobol' quasi-Monte
+  Carlo sampler. The Saltelli coupled design (`A`, `B`, `AB_i`, `N*(d+2)`
+  evaluations) is built from one `2d`-dimensional sample split into `A`/`B`.
+- **Estimators (fixed and recorded):** first order Saltelli et al. (2010), total
+  order Jansen (1999), denominator `var([f(A), f(B)], ddof=1)`; a percentile
+  bootstrap interval is reported as a **diagnostic only**.
+- **Finite-sample honesty:** indices are **not clipped** to theoretical bounds;
+  zero/non-finite variance and any failed/timed-out/missing/non-finite evaluation
+  yield an explicit `inconclusive` result with counts and reasons (fail-closed).
+  Bounded default `N=32` and a 4096-evaluation cap (explicitly overridable).
+- **Interfaces:** CLI `drw sobol <experiment_id> [--output] [--factors a,b] [--n N]
+  [--seed S] [--bootstrap B]`; bridge op `global_sensitivity` (read-only w.r.t. the
+  store; isolated subprocess evaluations; optional measured progress via the job
+  journal); web "Global sensitivity (Sobol)" panel with the independence/caveat.
+- Tests: analytic Ishigami benchmark, additive/interaction/constant/no-effect
+  cases, determinism, failure semantics, invalid inputs, evaluation-count
+  invariants, real-model integration, CLI/bridge and web.
+
+### Notes
+
+- **Additive and on-demand.** No `ExperimentSpec`/`ModelSchema`, evidence-format,
+  ID, overwrite, delta, OAT, uncertainty or reproduce change; no persistence; no
+  new dependency; no parallelism. Independent-input assumption is stated; the study
+  is not causal and not scientific validation.
+- Methods note: `docs/methods/global-sensitivity.md`; ADR-0014.
+
+## [Milestone 8] - Ensemble uncertainty quantification
+
+### Added
+
+- **`uncertainty` analysis method.** When an experiment declares
+  `analyses: [{method: "uncertainty"}]`, the run produces a **descriptive**
+  summary of each declared scalar output over the experiment's **existing** sampled
+  variant runs (`drw.uncertainty`). No additional executions are performed.
+- Per output: `valid_samples`, `mean`, sample standard deviation (`ddof=1`),
+  `minimum`, `maximum` and `p05`/`p50`/`p95`. Quantiles use
+  `numpy.percentile(..., method="linear")`; the method, sampling method and seed are
+  recorded in the summary. **Count semantics are explicit:** `requested_variants` is
+  a per-run count; the summary-level `valid_output_samples` / `excluded_output_samples`
+  are totals summed across the declared scalar outputs ("output-samples") and can
+  exceed the variant count for multi-output models; the per-output
+  `valid_samples` / `excluded_samples` are authoritative.
+- A model with **no scalar outputs** yields an empty summary with an explicit note
+  ("nothing to summarize"); statistics are never fabricated.
+- **Explicit exclusions:** failed runs (`run_failed`), timeouts
+  (`run_timed_out`), missing outputs (`output_missing`) and non-finite values
+  (`non_finite`) are counted per output and never replaced with zero. With fewer
+  than two valid samples the standard deviation is reported as `null` and the
+  summary is flagged `insufficient`.
+- **Evidence:** an additive `uncertainty.json` artifact (kind `uncertainty`) is
+  added to the evidence package **only when the summary exists**; the manifest
+  `files` list and verification cover it. Experiments without the analysis are
+  byte-for-byte unchanged.
+- **CLI** `drw uncertainty <experiment_id> [--workspace <dir>]` and a read-only
+  bridge op `uncertainty`, both computed from stored runs without re-executing.
+- **Web:** a descriptive "Uncertainty" tab in the results view.
+- `capabilities.analysis_methods` now advertises `uncertainty`.
+
+### Notes
+
+- **Descriptive, not probabilistic.** The summary describes the sampled design
+  (parameters are sampled independently and uniformly over the declared factor
+  bounds, exactly as the sampler draws them); it is not a probability
+  distribution, a confidence interval, or scientific validation. The CLI, report
+  and UI say so.
+- No global (variance-based) Sobol sensitivity, optimization, parallelism, new
+  dependencies, schema-contract changes, model-equation or solver changes. Delta
+  and relative-delta behavior is unchanged.
+- Methods note: `docs/methods/uncertainty.md`.
+
+## [Milestone 7] - Reproducibility check
+
+### Added
+
+- **Reproduction check (`drw.reproduce`, ADR-0013).**
+  `reproduce_experiment(experiment_id, rtol, atol)` re-executes a stored
+  experiment's saved specification and compares the fresh runs to the stored
+  reference runs using the existing comparison infrastructure
+  (`compare_outputs`/`compare_run`). It is **read-only**: the fresh execution is
+  never persisted, so the stored experiment, reference result, manifest and
+  artifacts are unchanged.
+- **Explicit tolerances.** The check requires caller-supplied `rtol`/`atol`
+  (validated: finite, `>= 0`, `rtol < 1`). The declared `verification.rtol/atol`
+  are solver-integration tolerances and are **not** reused. Pass criterion:
+  `|fresh - reference| <= atol + rtol * |reference|`.
+- **Classification:** `identical`, `equivalent_within_tolerance`, `different`,
+  `inconclusive`, `execution_failed`, with per-output metrics (max abs/rel delta,
+  MAE, RMSE, valid/non-finite points) and a **separate** provenance comparison of
+  the spec/model/environment hashes.
+- **CLI:** `drw reproduce <experiment_id> --rtol <r> --atol <a> [--workspace <dir>]`
+  (exit 0 identical/equivalent, 1 different, 2 invalid request/unusable
+  reference/execution error).
+- **Bridge op:** `reproduce_experiment` (read-only), resolving the reference
+  through the existing store.
+- **Web UI:** a "Reproduce this result" panel in the results view with explicit,
+  validated tolerance inputs; ready/running/verdict states; per-output metric
+  tables; a fingerprint comparison table; and an explicit note that numerical
+  agreement is not scientific validity. The original result is never overwritten.
+
+### Notes
+
+- **Reference vs fresh identity made explicit.** The report exposes
+  `fresh_runs_persisted` (always `false`; the fresh execution exists only in
+  memory) and the CLI/UI label the **stored reference** and the **fresh execution
+  (not persisted)** distinctly, noting that a fresh run identifier can equal the
+  stored one because the deterministic id derives from the specification. Fresh
+  results are never persisted.
+- No schema, evidence format, model identity, deterministic ID, overwrite or
+  numerical-methodology change. No new dependencies.
+- Not claimed: cross-machine/cross-platform bitwise reproducibility, or scientific
+  validity from a passing check.
+
 ## [Milestone 6] - Scientific trust: evidence verification
 
 ### Added
@@ -26,6 +476,16 @@ changes explicitly (see the spec's AI coding loop, section 12.4).
 - **Documentation corrected to match ADR-0006 and the code:** the relative-change
   rule in `drw/numerics/delta.py` and the acceptance matrix now reads
   `r = Δy/y_ref` where `|y_ref| > ε`, else `NaN` (flagged). No numerical change.
+
+### Fixed
+
+- **Empty evidence manifests are rejected (audit F1).** A manifest with an empty
+  `files` list now raises `EvidenceVerificationError` instead of verifying
+  `ok=true` with zero artifacts. `drw verify` exits 2; the bridge returns
+  `bad_request`.
+- **Directory-listing errors are controlled (audit F3).** An `OSError` while
+  listing the evidence directory is reported as `EvidenceVerificationError` rather
+  than propagating uncaught; the CLI exits 2 and the bridge returns `bad_request`.
 
 ### Notes
 

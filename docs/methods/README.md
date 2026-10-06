@@ -9,6 +9,9 @@ when the result is *not* expected to match.
 | ODE integration | [ode-integration.md](./ode-integration.md) |
 | Differential analysis | [differential-analysis.md](./differential-analysis.md) |
 | Parameter sampling | [sampling.md](./sampling.md) |
+| Descriptive uncertainty | [uncertainty.md](./uncertainty.md) |
+| Global (Sobol) sensitivity | [global-sensitivity.md](./global-sensitivity.md) |
+| Local parameter identifiability | [identifiability.md](./identifiability.md) |
 
 Conventions used throughout:
 

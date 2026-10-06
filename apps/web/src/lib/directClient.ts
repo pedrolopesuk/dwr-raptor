@@ -9,11 +9,24 @@
 import { unwrap, type DrwClient, type LoadedExperiment, type RunOptions } from "./client";
 import { handlers, type HandlerResult } from "./handlers";
 import type {
+  CalibrationConfig,
+  CalibrationRef,
+  CalibrationResult,
+  CsvImportConfig,
+  CsvInspection,
+  DatasetDetail,
+  DatasetImportResult,
+  DatasetSource,
+  DatasetSummary,
+  DatasetVerification,
   EnvironmentData,
+  EvaluationConfig,
+  EvaluationResult,
   EvidenceData,
   ExperimentData,
   ExperimentSummary,
   ExperimentSpec,
+  IdentifiabilityReport,
   JobStatus,
   ModelCapabilities,
   ModelSchema,
@@ -21,7 +34,10 @@ import type {
   PlanProposal,
   PlannerStatus,
   Project,
+  ReproduceReport,
   SensitivityData,
+  SobolReport,
+  UncertaintySummary,
   ValidationResult,
 } from "./types";
 
@@ -56,6 +72,35 @@ export function createDirectClient(): DrwClient {
     exportEvidence: (experimentId) =>
       from<{ zip: string; path: string }>(handlers.exportEvidence(experimentId)),
     sensitivity: (experimentId) => from<SensitivityData>(handlers.sensitivity(experimentId)),
+    uncertainty: (experimentId) => from<UncertaintySummary>(handlers.uncertainty(experimentId)),
+    globalSensitivity: async (experimentId, options) => {
+      const params: Record<string, unknown> = {};
+      if (options?.output) params.output = options.output;
+      if (options?.factors && options.factors.length > 0) params.factors = options.factors;
+      if (options?.sampleCount !== undefined) params.sample_count = options.sampleCount;
+      if (options?.seed !== undefined) params.seed = options.seed;
+      return (
+        await from<{ report: SobolReport }>(handlers.globalSensitivity(experimentId, params))
+      ).report;
+    },
+    identifiability: async (experimentId, options) => {
+      const params: Record<string, unknown> = {};
+      if (options?.factors && options.factors.length > 0) params.factors = options.factors;
+      if (options?.outputs && options.outputs.length > 0) params.outputs = options.outputs;
+      if (options?.stepScale !== undefined) params.step_scale = options.stepScale;
+      if (options?.seed !== undefined) params.seed = options.seed;
+      return (
+        await from<{ report: IdentifiabilityReport }>(
+          handlers.identifiability(experimentId, params),
+        )
+      ).report;
+    },
+    reproduceExperiment: async (experimentId, rtol, atol) =>
+      (
+        await from<{ report: ReproduceReport }>(
+          handlers.reproduceExperiment(experimentId, rtol, atol),
+        )
+      ).report,
     listProjects: async () =>
       (await from<{ projects: Project[] }>(handlers.listProjects())).projects,
     createProject: async (name, modelId) =>
@@ -64,5 +109,45 @@ export function createDirectClient(): DrwClient {
       from<PlanProposal>(handlers.planExperiment(modelId, question, context)),
     plannerStatus: () => from<PlannerStatus>(handlers.plannerStatus()),
     environment: () => from<EnvironmentData>(handlers.environment()),
+    listDatasetSources: async () =>
+      (await from<{ sources: DatasetSource[] }>(handlers.listDatasetSources())).sources,
+    inspectDataset: async (filename, options) => {
+      const params: Record<string, unknown> = { filename };
+      if (options?.delimiter) params.delimiter = options.delimiter;
+      if (options?.hasHeader !== undefined) params.has_header = options.hasHeader;
+      if (options?.missingCodes && options.missingCodes.length > 0) {
+        params.missing_codes = options.missingCodes;
+      }
+      return (await from<{ inspection: CsvInspection }>(handlers.inspectDataset(params))).inspection;
+    },
+    importDataset: (filename, config: CsvImportConfig, dryRun) =>
+      from<DatasetImportResult>(
+        handlers.importDataset({ filename, config, dry_run: dryRun ?? false }),
+      ),
+    listDatasets: async () =>
+      (await from<{ datasets: DatasetSummary[] }>(handlers.listDatasets())).datasets,
+    describeDataset: (datasetId) =>
+      from<DatasetDetail>(handlers.describeDataset(datasetId)),
+    verifyDataset: async (datasetId) =>
+      (await from<{ verification: DatasetVerification }>(handlers.verifyDataset(datasetId)))
+        .verification,
+    evaluate: async (experimentId, options) =>
+      (
+        await from<{ evaluation: EvaluationResult }>(
+          handlers.evaluateExperiment(experimentId, {
+            run_id: options.runId,
+            mapping: options.mapping,
+            config: options.config as EvaluationConfig | undefined,
+          }),
+        )
+      ).evaluation,
+    calibrate: (experimentId, options) =>
+      from<{ calibration: CalibrationResult; ref?: CalibrationRef }>(
+        handlers.calibrateExperiment(experimentId, {
+          config: options.config as unknown as CalibrationConfig,
+          persist: options.persist,
+          job_id: options.jobId,
+        }),
+      ),
   };
 }

@@ -217,6 +217,12 @@ class Runner:
             )
         )
 
+        uncertainty = None
+        if any(analysis.method == "uncertainty" for analysis in spec.analyses):
+            from drw.uncertainty import compute_uncertainty
+
+            uncertainty = compute_uncertainty(schema, spec, runs[1:])
+
         result = ExperimentResult(
             experiment_id=resolved_id,
             spec=spec,
@@ -232,6 +238,7 @@ class Runner:
             warnings=warnings,
             started_at=started_at,
             finished_at=_utcnow(),
+            uncertainty=uncertainty,
         )
         return result
 

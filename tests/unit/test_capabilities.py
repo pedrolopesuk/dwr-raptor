@@ -18,7 +18,7 @@ def test_predator_prey_capabilities():
     assert "prey" in caps["timeseries_outputs"]
     assert "peak_prey" in caps["scalar_outputs"]
     assert caps["sensitivity"] == "oat"
-    assert caps["analysis_methods"] == ["delta", "relative_delta"]
+    assert caps["analysis_methods"] == ["delta", "relative_delta", "uncertainty"]
     assert caps["limitations"] == []
 
 
@@ -33,3 +33,15 @@ def test_capabilities_report_limitations_honestly():
     assert caps["sensitivity"] is None
     assert any("bounds" in note for note in caps["limitations"])
     assert any("time-series" in note for note in caps["limitations"])
+
+
+def test_capabilities_expose_the_global_sensitivity_study_limits():
+    # The UI reads the default sample count and evaluation cap from here; they must
+    # be the core's single-sourced constants (no duplicated configuration).
+    from drw.global_sensitivity import DEFAULT_SAMPLE_COUNT, MAX_EVALUATIONS
+
+    caps = model_capabilities(build_model("predator-prey").describe())
+    assert caps["global_sensitivity"] == {
+        "default_sample_count": DEFAULT_SAMPLE_COUNT,
+        "max_evaluations": MAX_EVALUATIONS,
+    }

@@ -39,7 +39,7 @@ test.describe("live local acceptance", () => {
     const { consoleErrors, failedRequests } = watchForErrors(page);
 
     // 1-2. Open the app; inspect projects and registered models.
-    await page.goto("/");
+    await page.goto("/?mode=manual");
     await expect(page.getByText("Researcher workspace")).toBeVisible();
     await expect(page.getByTestId("status-value")).toHaveText(/^idle$/);
     await expect(page.getByText(/registered model\(s\)/)).toBeVisible();

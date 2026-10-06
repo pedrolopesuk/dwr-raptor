@@ -32,9 +32,7 @@ export function NewExperimentPanel({
   const viability = modelViability(selected ? capabilities[selectedModelId] : null);
 
   return (
-    <div className="drw-sidebar__section drw-stack-tight">
-      <h2 className="drw-sidebar__heading">New experiment</h2>
-
+    <div className="drw-stack-tight">
       {models.length === 0 ? (
         <InlineLoading description="Loading models" />
       ) : (

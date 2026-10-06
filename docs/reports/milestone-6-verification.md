@@ -131,6 +131,30 @@ valid + tampered + unknown experiment (`not_found`).
 
 ---
 
+## 5b. Hardening (audit F1 + F3)
+
+Two findings from the read-only Milestone 6 audit were fixed, both in
+`drw/execution/evidence.py::verify_evidence` (and exercised through the CLI and
+bridge); no other behavior changed:
+
+* **F1 - empty manifests.** A manifest with `"files": []` now raises
+  `EvidenceVerificationError` ("manifest declares no artifacts"), so an empty
+  package can never return `ok=true`. `drw verify` exits 2; the bridge op returns
+  `bad_request`. This keeps the `ok ⟺ failed == 0` invariant intact (there is no
+  artifact to attribute a failure to).
+* **F3 - directory-listing errors.** The `root.iterdir()` listing is wrapped; an
+  `OSError` is re-raised as `EvidenceVerificationError` instead of propagating.
+  The CLI now exits 2 (no traceback); the bridge returns `bad_request`.
+
+Regression tests: `test_empty_files_list_is_rejected`,
+`test_directory_listing_error_is_controlled` (mocked `pathlib.Path.iterdir`),
+`test_verify_rejects_an_empty_manifest`, `test_verify_handles_a_directory_listing_error`,
+`test_verify_evidence_empty_manifest_is_bad_request`. Verification remains strictly
+read-only; valid non-empty packages, path containment, size/SHA-256 checks,
+extra-file semantics and existing statuses are unchanged.
+
+---
+
 ## 6. Checks not run
 
 * Live (`local-acceptance.spec.ts`) browser run was **not** re-run this session;

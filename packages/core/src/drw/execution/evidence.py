@@ -139,6 +139,39 @@ def render_report(result: ExperimentResult) -> str:
     lines.append(f"- numpy/scipy: {result.environment.get('numpy')} / {result.environment.get('scipy')}")
     lines.append("")
 
+    if result.uncertainty is not None:
+        uncertainty = result.uncertainty
+        lines.append("## Uncertainty (descriptive)")
+        lines.append("")
+        lines.append(
+            f"- Sampling: `{uncertainty.sampling_method}` · seed {uncertainty.seed} · "
+            f"variants {uncertainty.requested_variants} · "
+            f"valid output-samples {uncertainty.valid_output_samples} · "
+            f"excluded output-samples {uncertainty.excluded_output_samples}"
+        )
+        lines.append(
+            f"- Quantiles {uncertainty.quantiles} (method `{uncertainty.quantile_method}`)"
+        )
+        lines.append("")
+        lines.append("| output | unit | valid | mean | std | min | max | p05 | p50 | p95 |")
+        lines.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
+
+        def _fmt(value: float | None) -> str:
+            return "n/a" if value is None else f"{value:.6g}"
+
+        for output in uncertainty.outputs:
+            lines.append(
+                f"| {output.output} | {output.unit} | {output.valid_samples} | {_fmt(output.mean)} | "
+                f"{_fmt(output.std)} | {_fmt(output.minimum)} | {_fmt(output.maximum)} | "
+                f"{_fmt(output.p05)} | {_fmt(output.p50)} | {_fmt(output.p95)} |"
+            )
+        lines.append("")
+        lines.append(
+            "_Descriptive summary of the sampled design; not a probabilistic guarantee "
+            "or scientific validation._"
+        )
+        lines.append("")
+
     warnings = list(result.warnings) + [
         warning for comparison in result.comparisons for warning in comparison.warnings
     ]
@@ -194,6 +227,17 @@ def build_evidence_package(
         _file_entry(report_path, root, "report"),
     ]
 
+    # Additive artifact: present only when the experiment declared the
+    # ``uncertainty`` analysis. Experiments without it are unchanged.
+    bundle_paths = [spec_path, schema_path, results_path, report_path]
+    if result.uncertainty is not None:
+        uncertainty_path = root / "uncertainty.json"
+        uncertainty_path.write_text(
+            dumps_pretty(result.uncertainty) + "\n", encoding="utf-8"
+        )
+        files.append(_file_entry(uncertainty_path, root, "uncertainty"))
+        bundle_paths.append(uncertainty_path)
+
     manifest = EvidenceManifest(
         generated_at=generated_at or datetime.now(UTC).isoformat(),
         experiment_id=result.experiment_id,
@@ -220,7 +264,7 @@ def build_evidence_package(
     if zip_bundle:
         archive = root.parent / f"{root.name}.zip"
         with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as bundle:
-            for path in (spec_path, schema_path, results_path, report_path, manifest_path):
+            for path in (*bundle_paths, manifest_path):
                 bundle.write(path, arcname=path.relative_to(root).as_posix())
 
     return manifest_path
@@ -359,9 +403,11 @@ def verify_evidence(manifest_path: str | Path) -> EvidenceVerification:
     Undeclared files present in the directory are listed in ``extra_files`` and
     are **not** treated as verified evidence.
 
-    Structural problems - a missing, unreadable or malformed manifest - raise
-    :class:`EvidenceVerificationError`. Nothing is written: manifests, artifacts,
-    experiment records and stored results are only read.
+    Structural problems raise :class:`EvidenceVerificationError`: a missing,
+    unreadable or malformed manifest, a manifest that declares **no** artifacts
+    (an empty package must never verify), or an evidence directory that cannot be
+    listed. Nothing is written: manifests, artifacts, experiment records and
+    stored results are only read.
     """
     path = Path(manifest_path)
     if not path.is_file():
@@ -379,6 +425,10 @@ def verify_evidence(manifest_path: str | Path) -> EvidenceVerification:
     entries = manifest.get("files")
     if not isinstance(entries, list):
         raise EvidenceVerificationError("manifest is missing a 'files' list")
+    if not entries:
+        raise EvidenceVerificationError(
+            "manifest declares no artifacts; an empty package cannot be verified"
+        )
 
     root = path.parent
     artifacts = [_verify_artifact(root, entry) for entry in entries]
@@ -386,7 +436,13 @@ def verify_evidence(manifest_path: str | Path) -> EvidenceVerification:
     declared = {artifact.path for artifact in artifacts}
     extra_files: list[str] = []
     manifest_name = path.name
-    for sibling in sorted(root.iterdir()):
+    try:
+        siblings = sorted(root.iterdir())
+    except OSError as exc:
+        raise EvidenceVerificationError(
+            f"could not list the evidence directory {root}: {exc}"
+        ) from exc
+    for sibling in siblings:
         name = sibling.relative_to(root).as_posix()
         if sibling.is_file() and name != manifest_name and name not in declared:
             extra_files.append(name)

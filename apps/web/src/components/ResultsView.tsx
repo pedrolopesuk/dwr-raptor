@@ -26,6 +26,7 @@ import {
 import { Diagnostics } from "@/components/Diagnostics";
 import { Section } from "@/components/Section";
 import { LineChart } from "@/components/LineChart";
+import { UncertaintyTable } from "@/components/UncertaintyTable";
 import { formatDuration, formatNumber, shortHash } from "@/lib/format";
 import { runIssues } from "@/lib/experiment";
 import type {
@@ -85,6 +86,7 @@ export function ResultsView({
           <Tab>Plots</Tab>
           <Tab>Metrics</Tab>
           <Tab>Sensitivity</Tab>
+          {data.uncertainty ? <Tab>Uncertainty</Tab> : null}
           <Tab>Reproducibility</Tab>
         </TabList>
         <TabPanels>
@@ -108,6 +110,13 @@ export function ResultsView({
               <Sensitivity data={sensitivity} error={sensitivityError} />
             </div>
           </TabPanel>
+          {data.uncertainty ? (
+            <TabPanel className="drw-tabpanel">
+              <div data-testid="uncertainty-panel">
+                <UncertaintyTable summary={data.uncertainty} />
+              </div>
+            </TabPanel>
+          ) : null}
           <TabPanel className="drw-tabpanel">
             <div data-testid="reproducibility-panel">
               <Reproducibility

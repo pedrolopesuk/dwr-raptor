@@ -24,6 +24,7 @@ function capabilities(overrides: Partial<ModelCapabilities>): ModelCapabilities 
     analysis_methods: ["delta"],
     sensitivity: null,
     isolation: "subprocess",
+    global_sensitivity: { default_sample_count: 32, max_evaluations: 4096 },
     limitations: [],
     ...overrides,
   };

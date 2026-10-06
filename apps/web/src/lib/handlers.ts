@@ -65,6 +65,17 @@ export const handlers = {
     dispatch("export_evidence", { experiment_id: experimentId }),
   sensitivity: (experimentId: string) =>
     dispatch("sensitivity", { experiment_id: experimentId }),
+  uncertainty: (experimentId: string) =>
+    dispatch("uncertainty", { experiment_id: experimentId }),
+  globalSensitivity: (experimentId: string, params: Record<string, unknown>) =>
+    // The URL experiment id is authoritative: a caller-supplied body field may
+    // not override it (the spread is ordered so that the path id wins).
+    dispatch("global_sensitivity", { ...params, experiment_id: experimentId }),
+  identifiability: (experimentId: string, params: Record<string, unknown>) =>
+    // Same rule: the path experiment id wins over any body field.
+    dispatch("identifiability", { ...params, experiment_id: experimentId }),
+  reproduceExperiment: (experimentId: string, rtol: unknown, atol: unknown) =>
+    dispatch("reproduce_experiment", { experiment_id: experimentId, rtol, atol }),
   listProjects: () => dispatch("list_projects", {}),
   createProject: (name: string, modelId?: string) =>
     dispatch("create_project", modelId ? { name, model_id: modelId } : { name }),
@@ -72,4 +83,16 @@ export const handlers = {
     dispatch("plan_experiment", context ? { model_id: modelId, question, context } : { model_id: modelId, question }),
   plannerStatus: () => dispatch("planner_status", {}),
   environment: () => dispatch("environment", {}),
+  listDatasetSources: () => dispatch("list_dataset_sources", {}),
+  inspectDataset: (params: Record<string, unknown>) => dispatch("inspect_dataset", params),
+  importDataset: (params: Record<string, unknown>) => dispatch("import_dataset", params),
+  listDatasets: () => dispatch("list_datasets", {}),
+  describeDataset: (datasetId: string) => dispatch("describe_dataset", { dataset_id: datasetId }),
+  verifyDataset: (datasetId: string) => dispatch("verify_dataset", { dataset_id: datasetId }),
+  evaluateExperiment: (experimentId: string, params: Record<string, unknown>) =>
+    // The URL experiment id is authoritative: a body field may not override it.
+    dispatch("evaluate", { ...params, experiment_id: experimentId }),
+  calibrateExperiment: (experimentId: string, params: Record<string, unknown>) =>
+    // The URL experiment id is authoritative: a body field may not override it.
+    dispatch("calibrate", { ...params, experiment_id: experimentId }),
 };

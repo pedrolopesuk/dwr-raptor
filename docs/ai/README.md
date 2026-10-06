@@ -60,7 +60,11 @@ DRW_LLM_BASE_URL=https://api.openai.com/v1
 
 ## Limitations
 
-* OAT/delta only; no global sensitivity or uncertainty quantification.
+* The planner targets OAT/delta-style experiments: it does **not** propose global
+  (Sobol) sensitivity or uncertainty-quantification studies. Those analyses are
+  available elsewhere in DRW - `drw sobol` / the "Global sensitivity" panel
+  (`docs/methods/global-sensitivity.md`) and the M8 uncertainty summary
+  (`docs/methods/uncertainty.md`) - and are run on demand, not through the planner.
 * The LLM HTTP client is implemented but **not automatically tested** without a
   key; the rule-based planner and the merge/filter logic are thoroughly tested
   with a fake provider.

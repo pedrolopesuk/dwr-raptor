@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -202,6 +203,163 @@ def test_verify_evidence_unknown_experiment_is_not_found(store):
     assert response["error"]["code"] == "not_found"
 
 
+def test_verify_evidence_empty_manifest_is_bad_request(store, sample_spec):
+    experiment_id = _call({"op": "run", "params": {"spec": sample_spec}}, store)["data"][
+        "experiment_id"
+    ]
+    manifest = store.experiment_dir(experiment_id) / "evidence" / "manifest.json"
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    data["files"] = []
+    manifest.write_text(json.dumps(data), encoding="utf-8")
+
+    response = _call(
+        {"op": "verify_evidence", "params": {"experiment_id": experiment_id}}, store
+    )
+    assert response["ok"] is False
+    assert response["error"]["code"] == "bad_request"
+
+
+def _snapshot(directory) -> dict[str, str]:
+    return {
+        path.relative_to(directory).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted(directory.rglob("*"))
+        if path.is_file()
+    }
+
+
+def test_reproduce_experiment_op_is_read_only(store, sample_spec):
+    experiment_id = _call({"op": "run", "params": {"spec": sample_spec}}, store)["data"][
+        "experiment_id"
+    ]
+    directory = store.experiment_dir(experiment_id)
+    before = _snapshot(directory)
+
+    response = _call(
+        {
+            "op": "reproduce_experiment",
+            "params": {"experiment_id": experiment_id, "rtol": 1e-9, "atol": 1e-12},
+        },
+        store,
+    )
+    assert response["ok"] is True
+    report = response["data"]["report"]
+    assert report["experiment_id"] == experiment_id
+    assert report["verdict"] in ("identical", "equivalent_within_tolerance")
+    assert report["fresh_runs_persisted"] is False
+    assert len(report["reference_run_ids"]) == len(report["fresh_run_ids"]) == 2
+
+    assert _snapshot(directory) == before
+
+
+def test_reproduce_experiment_detects_a_difference(store, sample_spec):
+    experiment_id = _call({"op": "run", "params": {"spec": sample_spec}}, store)["data"][
+        "experiment_id"
+    ]
+    results_path = store.experiment_dir(experiment_id) / "results.json"
+    results = json.loads(results_path.read_text(encoding="utf-8"))
+    prey = results["runs"][1]["result"]["outputs"]["prey"]
+    prey["values"] = [value + 1.0 for value in prey["values"]]
+    results_path.write_text(json.dumps(results), encoding="utf-8")
+
+    response = _call(
+        {
+            "op": "reproduce_experiment",
+            "params": {"experiment_id": experiment_id, "rtol": 1e-9, "atol": 1e-12},
+        },
+        store,
+    )
+    assert response["data"]["report"]["verdict"] == "different"
+
+
+def test_reproduce_experiment_request_validation(store, sample_spec):
+    experiment_id = _call({"op": "run", "params": {"spec": sample_spec}}, store)["data"][
+        "experiment_id"
+    ]
+    missing = _call(
+        {"op": "reproduce_experiment", "params": {"experiment_id": experiment_id, "atol": 1e-9}},
+        store,
+    )
+    assert missing["ok"] is False and missing["error"]["code"] == "bad_request"
+
+    not_a_number = _call(
+        {
+            "op": "reproduce_experiment",
+            "params": {"experiment_id": experiment_id, "rtol": "nope", "atol": 1e-9},
+        },
+        store,
+    )
+    assert not_a_number["ok"] is False and not_a_number["error"]["code"] == "bad_request"
+
+    unknown = _call(
+        {
+            "op": "reproduce_experiment",
+            "params": {"experiment_id": "exp-000000000000", "rtol": 1e-9, "atol": 1e-9},
+        },
+        store,
+    )
+    assert unknown["ok"] is False and unknown["error"]["code"] == "not_found"
+
+
+def test_reproduce_experiment_missing_reference_is_bad_request(store, sample_spec):
+    experiment_id = _call({"op": "run", "params": {"spec": sample_spec}}, store)["data"][
+        "experiment_id"
+    ]
+    results_path = store.experiment_dir(experiment_id) / "results.json"
+    results = json.loads(results_path.read_text(encoding="utf-8"))
+    results["runs"] = []
+    results_path.write_text(json.dumps(results), encoding="utf-8")
+
+    response = _call(
+        {
+            "op": "reproduce_experiment",
+            "params": {"experiment_id": experiment_id, "rtol": 1e-9, "atol": 1e-12},
+        },
+        store,
+    )
+    assert response["ok"] is False and response["error"]["code"] == "bad_request"
+
+
+def test_reproduce_experiment_execution_failure(store, sample_spec, monkeypatch):
+    from types import SimpleNamespace
+
+    from drw.schema.model import ModelRef
+    from drw.schema.result import RunRecord, RunStatus
+
+    experiment_id = _call({"op": "run", "params": {"spec": sample_spec}}, store)["data"][
+        "experiment_id"
+    ]
+    directory = store.experiment_dir(experiment_id)
+    before = _snapshot(directory)
+    failed = [
+        RunRecord(
+            run_id=f"fresh-r{index:04d}",
+            experiment_id=experiment_id,
+            label="baseline" if index == 0 else "variant",
+            status=RunStatus.FAILED,
+            model_ref=ModelRef(model_id="predator-prey"),
+            result=None,
+        )
+        for index in range(2)
+    ]
+    monkeypatch.setattr(
+        "drw.reproduce.Runner",
+        lambda: SimpleNamespace(run=lambda spec, **kwargs: SimpleNamespace(runs=failed)),
+    )
+
+    response = _call(
+        {
+            "op": "reproduce_experiment",
+            "params": {"experiment_id": experiment_id, "rtol": 1e-9, "atol": 1e-12},
+        },
+        store,
+    )
+    # The request is processed; the report itself records the execution failure.
+    assert response["ok"] is True
+    assert response["data"]["report"]["verdict"] == "execution_failed"
+    assert response["data"]["report"]["fresh_runs_persisted"] is False
+    assert _snapshot(directory) == before
+
+
 def test_sensitivity_ranking_is_sorted_and_normalized(store, sample_spec):
     experiment_id = _call({"op": "run", "params": {"spec": sample_spec}}, store)["data"][
         "experiment_id"
@@ -249,3 +407,276 @@ def test_bridge_process_protocol(tmp_path):
     response = json.loads(completed.stdout)
     assert response["ok"] is True
     assert any(m["model_id"] == "predator-prey" for m in response["data"]["models"])
+
+
+def test_uncertainty_op(store, sample_spec):
+    experiment_id = _call({"op": "run", "params": {"spec": sample_spec}}, store)["data"][
+        "experiment_id"
+    ]
+
+    response = _call({"op": "uncertainty", "params": {"experiment_id": experiment_id}}, store)
+    assert response["ok"] is True
+    summary = response["data"]["uncertainty"]
+    assert summary["sampling_method"] == "grid"
+    assert summary["quantile_method"] == "linear"
+    assert summary["quantiles"] == [5.0, 50.0, 95.0]
+    assert summary["descriptive_only"] is True
+    assert summary["requested_variants"] == 1  # the demo spec is a single-value grid
+    assert summary["note"]  # grid designs are flagged as not a sampling distribution
+    peak = next(output for output in summary["outputs"] if output["output"] == "peak_prey")
+    assert peak["requested_variants"] == 1 and peak["sufficient"] is False
+    assert peak["std"] is None
+
+
+def test_uncertainty_op_unknown_experiment_is_not_found(store):
+    response = _call(
+        {"op": "uncertainty", "params": {"experiment_id": "exp-000000000000"}}, store
+    )
+    assert response["ok"] is False and response["error"]["code"] == "not_found"
+
+
+def test_uncertainty_op_no_runs_is_bad_request(store, sample_spec):
+    experiment_id = _call({"op": "run", "params": {"spec": sample_spec}}, store)["data"][
+        "experiment_id"
+    ]
+    results_path = store.experiment_dir(experiment_id) / "results.json"
+    results = json.loads(results_path.read_text(encoding="utf-8"))
+    results["runs"] = []
+    results_path.write_text(json.dumps(results), encoding="utf-8")
+
+    response = _call(
+        {"op": "uncertainty", "params": {"experiment_id": experiment_id}}, store
+    )
+    assert response["ok"] is False and response["error"]["code"] == "bad_request"
+
+
+def test_global_sensitivity_op(store, sample_spec):
+    experiment_id = _call({"op": "run", "params": {"spec": sample_spec}}, store)["data"][
+        "experiment_id"
+    ]
+    response = _call(
+        {
+            "op": "global_sensitivity",
+            "params": {
+                "experiment_id": experiment_id,
+                "output": "peak_prey",
+                "factors": ["alpha", "beta"],
+                "sample_count": 8,
+                "seed": 3,
+                "bootstrap_resamples": 20,
+            },
+        },
+        store,
+    )
+    assert response["ok"] is True
+    report = response["data"]["report"]
+    assert report["output"] == "peak_prey"
+    assert report["factors"] == ["alpha", "beta"]
+    assert report["evaluations_requested"] == 32
+    assert report["evaluations_completed"] == 32
+    assert report["inconclusive"] is False
+    assert {row["name"] for row in report["results"]} == {"alpha", "beta"}
+
+
+def test_global_sensitivity_op_validation(store, sample_spec):
+    experiment_id = _call({"op": "run", "params": {"spec": sample_spec}}, store)["data"][
+        "experiment_id"
+    ]
+
+    unknown_factor = _call(
+        {
+            "op": "global_sensitivity",
+            "params": {"experiment_id": experiment_id, "factors": ["nope"], "sample_count": 8},
+        },
+        store,
+    )
+    assert unknown_factor["ok"] is False and unknown_factor["error"]["code"] == "bad_request"
+
+    not_a_list = _call(
+        {
+            "op": "global_sensitivity",
+            "params": {"experiment_id": experiment_id, "factors": "alpha"},
+        },
+        store,
+    )
+    assert not_a_list["ok"] is False and not_a_list["error"]["code"] == "bad_request"
+
+    unknown_experiment = _call(
+        {
+            "op": "global_sensitivity",
+            "params": {"experiment_id": "exp-000000000000", "sample_count": 8},
+        },
+        store,
+    )
+    assert unknown_experiment["ok"] is False and unknown_experiment["error"]["code"] == "not_found"
+
+    # The seed must be a non-negative integer (consistent with the CLI and web UI).
+    negative_seed = _call(
+        {
+            "op": "global_sensitivity",
+            "params": {
+                "experiment_id": experiment_id, "factors": ["alpha"], "sample_count": 8,
+                "seed": -1,
+            },
+        },
+        store,
+    )
+    assert negative_seed["ok"] is False and negative_seed["error"]["code"] == "bad_request"
+    assert "seed" in negative_seed["error"]["message"]
+
+    # A study exceeding the evaluation cap is rejected before executing.
+    over_cap = _call(
+        {
+            "op": "global_sensitivity",
+            "params": {"experiment_id": experiment_id, "factors": ["alpha"], "sample_count": 4096},
+        },
+        store,
+    )
+    assert over_cap["ok"] is False and over_cap["error"]["code"] == "bad_request"
+    assert "evaluations" in over_cap["error"]["message"]
+
+
+# --- global-sensitivity progress reporting (job journal, ADR-0009) ----------
+
+
+def _stored_experiment_id(store, sample_spec) -> str:
+    return _call({"op": "run", "params": {"spec": sample_spec}}, store)["data"]["experiment_id"]
+
+
+def _job_status(store, job_id) -> dict:
+    response = _call({"op": "job_status", "params": {"job_id": job_id}}, store)
+    assert response["ok"] is True
+    return response["data"]
+
+
+def test_global_sensitivity_progress_reports_measured_completion(store, sample_spec):
+    experiment_id = _stored_experiment_id(store, sample_spec)
+    job_id = "job-" + "a" * 16
+
+    response = _call(
+        {
+            "op": "global_sensitivity",
+            "params": {
+                "experiment_id": experiment_id,
+                "output": "peak_prey",
+                "factors": ["alpha", "beta"],
+                "sample_count": 8,
+                "seed": 3,
+                "bootstrap_resamples": 5,
+                "job_id": job_id,
+            },
+        },
+        store,
+    )
+    assert response["ok"] is True, response
+    report = response["data"]["report"]
+    assert report["inconclusive"] is False
+    total = report["evaluations_requested"]
+    assert total == 8 * (2 + 2)
+
+    status = _job_status(store, job_id)
+    assert status["phase"] == "finished"
+    assert status["terminal"] is True
+    assert status["status"] == "succeeded"
+    assert status["total_runs"] == total
+    # Measured, not estimated: one run_completed event per evaluation.
+    assert status["completed_runs"] == total
+    events = status["events"]
+    assert events[0]["event"] == "started"
+    assert events[-1]["event"] == "finished"
+    assert sum(1 for event in events if event["event"] == "run_completed") == total
+
+
+def test_global_sensitivity_progress_reports_invalid_study_as_failed(store, sample_spec):
+    experiment_id = _stored_experiment_id(store, sample_spec)
+    job_id = "job-" + "b" * 16
+
+    response = _call(
+        {
+            "op": "global_sensitivity",
+            "params": {
+                "experiment_id": experiment_id,
+                "factors": ["nope"],
+                "sample_count": 8,
+                "job_id": job_id,
+            },
+        },
+        store,
+    )
+    assert response["ok"] is False and response["error"]["code"] == "bad_request"
+
+    status = _job_status(store, job_id)
+    assert status["phase"] == "finished"
+    assert status["terminal"] is True
+    assert status["status"] == "failed"
+    assert status["status"] != "succeeded"
+    assert status["completed_runs"] == 0
+
+
+def test_global_sensitivity_progress_reports_over_cap_study_as_failed(store, sample_spec):
+    experiment_id = _stored_experiment_id(store, sample_spec)
+    job_id = "job-" + "c" * 16
+
+    response = _call(
+        {
+            "op": "global_sensitivity",
+            "params": {
+                "experiment_id": experiment_id,
+                "factors": ["alpha"],
+                "sample_count": 4096,
+                "job_id": job_id,
+            },
+        },
+        store,
+    )
+    assert response["ok"] is False and response["error"]["code"] == "bad_request"
+
+    status = _job_status(store, job_id)
+    assert status["phase"] == "finished"
+    assert status["terminal"] is True
+    assert status["status"] == "failed"
+    assert status["completed_runs"] == 0
+
+
+def test_global_sensitivity_progress_inconclusive_is_not_success(store, sample_spec, monkeypatch):
+    from drw.global_sensitivity import SobolReport
+
+    experiment_id = _stored_experiment_id(store, sample_spec)
+    job_id = "job-" + "d" * 16
+
+    def inconclusive(*_args, **_kwargs):
+        return SobolReport(
+            model_id="predator-prey",
+            output="peak_prey",
+            sample_count=8,
+            seed=3,
+            dimensions=1,
+            factors=["alpha"],
+            evaluations_requested=24,
+            evaluations_completed=24,
+            inconclusive=True,
+            reasons=["output variance is zero or non-finite; the indices are undefined"],
+        )
+
+    monkeypatch.setattr("drw.global_sensitivity.sobol_indices_for_experiment", inconclusive)
+
+    response = _call(
+        {
+            "op": "global_sensitivity",
+            "params": {
+                "experiment_id": experiment_id,
+                "factors": ["alpha"],
+                "sample_count": 8,
+                "job_id": job_id,
+            },
+        },
+        store,
+    )
+    assert response["ok"] is True
+    assert response["data"]["report"]["inconclusive"] is True
+
+    status = _job_status(store, job_id)
+    assert status["phase"] == "finished"
+    assert status["terminal"] is True
+    assert status["status"] == "inconclusive"
+    assert status["status"] != "succeeded"

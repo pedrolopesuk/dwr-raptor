@@ -12,9 +12,14 @@ process.env.NODE_ENV = "development";
 export default defineConfig({
   plugins: [react()],
   resolve: {
-    alias: {
-      "@": fileURLToPath(new URL("./src", import.meta.url)),
-    },
+    alias: [
+      // Route-driven components are tested against an in-memory router.
+      {
+        find: /^next\/navigation$/,
+        replacement: fileURLToPath(new URL("./src/test/next-navigation.ts", import.meta.url)),
+      },
+      { find: "@", replacement: fileURLToPath(new URL("./src", import.meta.url)) },
+    ],
   },
   define: {
     "process.env.NODE_ENV": JSON.stringify("development"),

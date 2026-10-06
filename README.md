@@ -149,6 +149,20 @@ python -m drw demo --out .drw/demo
 
 # Verify an exported evidence package against its manifest (read-only)
 python -m drw verify .drw/predator-prey/manifest.json
+
+# Reproduce a stored experiment and compare it to the reference (read-only;
+# tolerances are explicit - see docs/architecture/ADR-0013-*.md)
+python -m drw reproduce exp-1d700f7ad478 --rtol 1e-9 --atol 1e-12 --workspace .drw/web-workspace
+
+# Descriptive uncertainty summary over a stored experiment's sampled design (read-only)
+python -m drw uncertainty exp-1d700f7ad478 --workspace .drw/web-workspace
+
+# Global variance-based (Sobol) sensitivity study (on-demand; runs model evaluations)
+python -m drw sobol exp-1d700f7ad478 --factors alpha,beta --n 32 --seed 0 --workspace .drw/web-workspace
+
+# Local parameter identifiability study (on-demand; runs model evaluations; read-only).
+# Local/structural only: not global identifiability, not practical (noisy-data) identifiability.
+python -m drw identifiability exp-1d700f7ad478 --factors beta,predator0 --outputs prey --workspace .drw/web-workspace
 ```
 
 ## Execution, isolation and timeouts
@@ -210,9 +224,16 @@ Also deliberately out of scope for now, and **not** to be implied otherwise:
 * **Sandboxing.** Execution is isolated by process boundary and timeout only; no
   filesystem or network restriction (ADR-0005).
 * **Parallel execution.** Runs are sequential.
-* **Global sensitivity / UQ / optimization.** Only delta/relative-delta and a
-  local one-at-a-time sensitivity ranking are implemented (ADR-0006 note; audit
-  SC-3).
+* **Optimization.** Not implemented. Global variance-based (Sobol) sensitivity is
+  available on demand (`drw sobol`, `docs/methods/global-sensitivity.md`); it
+  estimates first-/total-order indices for independent inputs and is not a causal
+  analysis. The local one-at-a-time ranking and a **descriptive** uncertainty
+  summary over a sampled design are also available (ADR-0006 note; audit SC-3). A
+  **local parameter identifiability** study (finite-difference sensitivity SVD;
+  `drw identifiability`, `docs/methods/identifiability.md`, ADR-0015) is available
+  on demand; it is **local/structural** only - not global identifiability and not
+  practical identifiability from noisy observations. **Calibration, parameter
+  fitting and observations/dataset ingestion are not implemented.**
 * **Full unit dimensional analysis.** Compound units are opaque labels (ADR-0003).
 
 ## License
