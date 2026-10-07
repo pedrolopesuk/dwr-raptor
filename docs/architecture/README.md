@@ -33,6 +33,8 @@ deliberately deferred.
 | [0025](./ADR-0025-calibration-identity-and-persistence.md) | Calibration identity, provenance & persistence |
 | [0026](./ADR-0026-calibration-failure-semantics.md) | Calibration failure semantics |
 | [0027](./ADR-0027-calibration-boundaries.md) | Calibration boundaries (validation & parameter uncertainty) |
+| [0028](./ADR-0028-scientific-intelligence.md) | Scientific Intelligence (SI) is a controlled orchestration layer |
+| [0029](./ADR-0029-controlled-model-compilation-and-simulation.md) | Bounded model compilation and simulation |
 
 See also:
 

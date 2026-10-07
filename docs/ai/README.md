@@ -1,5 +1,12 @@
 # AI experiment planner
 
+> **Scientific Intelligence (SI)** is now the primary AI interface of an
+> investigation: it plans, requires approval and orchestrates the whole
+> scientific loop. See [scientific-intelligence.md](scientific-intelligence.md)
+> and [ADR-0028](../architecture/ADR-0028-scientific-intelligence.md). This
+> document describes the original proposal-only planner, which SI's rule-based
+> planner reuses to build a real `ExperimentSpec`.
+
 **Status: implemented as a proposal-only, optional layer** (Milestone 4).
 See [ADR-0011](../architecture/ADR-0011-ai-planner.md).
 

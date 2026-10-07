@@ -36,6 +36,12 @@ import type {
   Project,
   ReproduceReport,
   SensitivityData,
+  SIAskResponse,
+  SIActionPreview,
+  SIActionsResponse,
+  SIExecuteResponse,
+  SIInvestigationState,
+  SIStateResponse,
   SobolReport,
   UncertaintySummary,
   ValidationConfig,
@@ -186,5 +192,46 @@ export function createDirectClient(): DrwClient {
           handlers.checkValidationStaleness(validationId),
         )
       ).staleness,
+    siActions: () => from<SIActionsResponse>(handlers.siActions()),
+    siState: (investigationId, options) =>
+      from<SIStateResponse>(
+        handlers.siState(investigationId, {
+          ...(options?.projectId ? { project_id: options.projectId } : {}),
+          ...(options?.modelId ? { model_id: options.modelId } : {}),
+        }),
+      ),
+    siAsk: (investigationId, question, options) =>
+      from<SIAskResponse>(
+        handlers.siAsk(investigationId, question, {
+          ...(options?.projectId ? { project_id: options.projectId } : {}),
+          ...(options?.modelId ? { model_id: options.modelId } : {}),
+        }),
+      ),
+    siPreview: async (investigationId, stepId, options) =>
+      (
+        await from<{ preview: SIActionPreview }>(
+          handlers.siPreview(investigationId, stepId, {
+            ...(options?.modelId ? { model_id: options.modelId } : {}),
+            ...(options?.planId ? { plan_id: options.planId } : {}),
+          }),
+        )
+      ).preview,
+    siExecute: (investigationId, stepId, options) =>
+      from<SIExecuteResponse>(
+        handlers.siExecute(investigationId, stepId, {
+          approve: options?.approve ?? true,
+          ...(options?.modelId ? { model_id: options.modelId } : {}),
+          ...(options?.planId ? { plan_id: options.planId } : {}),
+        }),
+      ),
+    siReject: async (investigationId, stepId, options) =>
+      (
+        await from<{ state: SIInvestigationState }>(
+          handlers.siReject(investigationId, stepId, {
+            ...(options?.modelId ? { model_id: options.modelId } : {}),
+            ...(options?.planId ? { plan_id: options.planId } : {}),
+          }),
+        )
+      ).state,
   };
 }

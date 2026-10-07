@@ -36,17 +36,15 @@ import type {
   ModelCapabilities,
   ModelSchema,
   ModelSummary,
-  PlanProposal,
-  PlannerStatus,
   Project,
   SensitivityData,
+  SIActionPreview,
+  SIActionRef,
+  SIInterpretation,
+  SIInvestigationState,
+  SIProviderStatus,
   ValidationResult,
 } from "@/lib/types";
-
-export type SiMessage =
-  | { id: number; role: "user"; text: string }
-  | { id: number; role: "si"; kind: "plan"; modelId: string; proposal: PlanProposal }
-  | { id: number; role: "si"; kind: "error"; text: string; questions: string[] };
 
 type CarbonTheme = "g10" | "g100";
 const THEME_STORAGE_KEY = "drw-theme";
@@ -128,12 +126,23 @@ export interface Workspace {
   exportEvidence: () => Promise<void>;
   createProject: (name: string) => Promise<void>;
   selectProject: (projectId: string) => void;
-  reviewProposal: (spec: ExperimentSpec, modelId: string) => Promise<void>;
-  runProposal: (spec: ExperimentSpec, modelId: string) => Promise<void>;
 
-  plannerNote: PlannerStatus | null;
-  conversation: (investigationId: string) => { messages: SiMessage[]; busy: boolean };
-  ask: (investigationId: string, question: string, modelId: string) => Promise<void>;
+  /** Scientific Intelligence: the durable investigation state and the action loop. */
+  siState: SIInvestigationState | null;
+  siActions: SIActionRef[];
+  siProvider: SIProviderStatus | null;
+  siBusy: boolean;
+  siError: string | null;
+  siPreview: SIActionPreview | null;
+  siPreviewStepId: string | null;
+  siLastInterpretation: SIInterpretation | null;
+  loadSi: (investigationId: string, modelId: string) => Promise<void>;
+  askSi: (investigationId: string, question: string, modelId: string) => Promise<void>;
+  previewSiStep: (investigationId: string, stepId: string, modelId: string) => Promise<void>;
+  clearSiPreview: () => void;
+  executeSiStep: (investigationId: string, stepId: string, modelId: string) => Promise<void>;
+  rejectSiStep: (investigationId: string, stepId: string) => Promise<void>;
+  clearSiError: () => void;
 }
 
 const Ctx = createContext<Workspace | null>(null);
@@ -198,10 +207,14 @@ export function WorkspaceProvider({
   const [datasetsRefresh, setDatasetsRefresh] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
 
-  const [plannerNote, setPlannerNote] = useState<PlannerStatus | null>(null);
-  const [threads, setThreads] = useState<Record<string, SiMessage[]>>({});
-  const [busyThreads, setBusyThreads] = useState<Record<string, boolean>>({});
-  const nextMessageId = useRef(1);
+  const [siState, setSiState] = useState<SIInvestigationState | null>(null);
+  const [siActions, setSiActions] = useState<SIActionRef[]>([]);
+  const [siProvider, setSiProvider] = useState<SIProviderStatus | null>(null);
+  const [siBusy, setSiBusy] = useState(false);
+  const [siError, setSiError] = useState<string | null>(null);
+  const [siPreview, setSiPreview] = useState<SIActionPreview | null>(null);
+  const [siPreviewStepId, setSiPreviewStepId] = useState<string | null>(null);
+  const [siLastInterpretation, setSiLastInterpretation] = useState<SIInterpretation | null>(null);
 
   // Restore the saved theme after mount (avoids a hydration mismatch).
   useEffect(() => {
@@ -289,9 +302,12 @@ export function WorkspaceProvider({
         setProjectsLoaded(true);
       }
       try {
-        setPlannerNote(await api.plannerStatus());
+        const registry = await api.siActions();
+        setSiActions(registry.actions);
+        setSiProvider(registry.provider);
       } catch {
-        setPlannerNote(null);
+        setSiActions([]);
+        setSiProvider(null);
       }
       await loadEnvironment();
     })();
@@ -484,13 +500,6 @@ export function WorkspaceProvider({
             ? `${data.comparisons.length} comparison(s) from ${data.runs.length} run(s)`
             : failed.flatMap((record) => runIssues(record)).join("; ") || "run incomplete",
         );
-        // The investigation now has a stored identity; carry its SI thread across.
-        setThreads((current) => {
-          const draft = current[DRAFT_ID];
-          if (!draft) return current;
-          const { [DRAFT_ID]: _moved, ...rest } = current;
-          return { ...rest, [data.experiment_id]: [...(rest[data.experiment_id] ?? []), ...draft] };
-        });
         router.replace(paths.investigation(projectId, data.experiment_id, "experiments"));
         await refreshExperiments(projectId);
         await loadEnvironment();
@@ -527,31 +536,110 @@ export function WorkspaceProvider({
     await performRun(spec);
   }, [performRun, spec, validation]);
 
-  /** Stages an SI proposal into Manual, validates it, and runs it only if valid. */
-  const runProposal = useCallback(
-    async (next: ExperimentSpec, modelId: string): Promise<void> => {
-      clearError();
+  const loadSi = useCallback(
+    async (investigationId: string, modelId: string): Promise<void> => {
+      setSiError(null);
       try {
-        const described = await api.describeModel(modelId);
-        openDraft(next, described.schema, described.model_hash, null);
-        setSelectedModelId(modelId);
-        const outcome = await api.validate(next);
-        setValidation(outcome);
-        if (!outcome.ok) {
-          setDetail(
-            "SI proposal loaded into Manual; the engine found problems - correct them before running",
-          );
-          router.push(paths.investigation(projectId, DRAFT_ID, "experiments/configure"));
-          return;
-        }
-        await performRun(next);
+        const result = await api.siState(investigationId, {
+          projectId,
+          ...(modelId ? { modelId } : {}),
+        });
+        setSiState(result.state);
+        setSiPreview(result.next_step_preview ?? null);
+        setSiPreviewStepId(result.state.current_next_step);
+        const interpretations = result.state.interpretations;
+        const last = interpretations.length > 0 ? interpretations[interpretations.length - 1] : null;
+        setSiLastInterpretation(last ?? null);
       } catch (error) {
-        describeError(error);
-        setStatus("failed");
+        setSiError(error instanceof Error ? error.message : String(error));
       }
     },
-    [api, clearError, describeError, openDraft, performRun, projectId, router],
+    [api, projectId],
   );
+
+  const askSi = useCallback(
+    async (investigationId: string, question: string, modelId: string): Promise<void> => {
+      setSiBusy(true);
+      setSiError(null);
+      setSiPreview(null);
+      setSiPreviewStepId(null);
+      try {
+        const result = await api.siAsk(investigationId, question, {
+          projectId,
+          ...(modelId ? { modelId } : {}),
+        });
+        setSiState(result.state);
+        const next = result.analysis.plan?.steps.find((step) => step.status === "proposed");
+        setSiPreviewStepId(next?.step_id ?? null);
+      } catch (caught) {
+        setSiError(caught instanceof Error ? caught.message : String(caught));
+      } finally {
+        setSiBusy(false);
+      }
+    },
+    [api, projectId],
+  );
+
+  const previewSiStep = useCallback(
+    async (investigationId: string, stepId: string, modelId: string): Promise<void> => {
+      setSiError(null);
+      try {
+        const preview = await api.siPreview(investigationId, stepId, modelId ? { modelId } : {});
+        setSiPreview(preview);
+        setSiPreviewStepId(stepId);
+      } catch (error) {
+        setSiError(error instanceof Error ? error.message : String(error));
+      }
+    },
+    [api],
+  );
+
+  const clearSiPreview = useCallback(() => {
+    setSiPreview(null);
+    setSiPreviewStepId(null);
+  }, []);
+
+  const executeSiStep = useCallback(
+    async (investigationId: string, stepId: string, modelId: string): Promise<void> => {
+      setSiBusy(true);
+      setSiError(null);
+      try {
+        const result = await api.siExecute(investigationId, stepId, {
+          approve: true,
+          ...(modelId ? { modelId } : {}),
+        });
+        setSiState(result.state);
+        setSiLastInterpretation(result.interpretation);
+        setSiPreview(null);
+        const plan = result.state.plans.find((item) => item.plan_id === result.state.current_plan_id);
+        const next = plan?.steps.find((step) => step.status === "proposed");
+        setSiPreviewStepId(next?.step_id ?? null);
+        if (result.execution.ok && result.execution.artifacts.experiment_id) {
+          await refreshExperiments(projectId);
+        }
+      } catch (error) {
+        setSiError(error instanceof Error ? error.message : String(error));
+      } finally {
+        setSiBusy(false);
+      }
+    },
+    [api, projectId, refreshExperiments],
+  );
+
+  const rejectSiStep = useCallback(
+    async (investigationId: string, stepId: string): Promise<void> => {
+      setSiError(null);
+      try {
+        const state = await api.siReject(investigationId, stepId);
+        setSiState(state);
+      } catch (error) {
+        setSiError(error instanceof Error ? error.message : String(error));
+      }
+    },
+    [api],
+  );
+
+  const clearSiError = useCallback(() => setSiError(null), []);
 
   const cancel = useCallback(() => abortRef.current?.abort(), []);
 
@@ -575,23 +663,6 @@ export function WorkspaceProvider({
     [projectId, router],
   );
 
-  /** Loads an SI proposal as a draft investigation. Nothing runs. */
-  const reviewProposal = useCallback(
-    async (next: ExperimentSpec, modelId: string): Promise<void> => {
-      clearError();
-      try {
-        const described = await api.describeModel(modelId);
-        openDraft(next, described.schema, described.model_hash, null);
-        setSelectedModelId(modelId);
-        setDetail("SI proposal loaded into Manual; validate and run when ready");
-        router.push(paths.investigation(projectId, DRAFT_ID, "experiments/configure"));
-      } catch (error) {
-        describeError(error);
-      }
-    },
-    [api, clearError, describeError, openDraft, projectId, router],
-  );
-
   const exportEvidence = useCallback(async (): Promise<void> => {
     if (!activeId || activeId === DRAFT_ID) return;
     setExporting(true);
@@ -605,49 +676,6 @@ export function WorkspaceProvider({
       setExporting(false);
     }
   }, [activeId, api]);
-
-  const ask = useCallback(
-    async (investigationId: string, question: string, modelId: string): Promise<void> => {
-      const userId = nextMessageId.current++;
-      setThreads((current) => ({
-        ...current,
-        [investigationId]: [
-          ...(current[investigationId] ?? []),
-          { id: userId, role: "user", text: question },
-        ],
-      }));
-      setBusyThreads((current) => ({ ...current, [investigationId]: true }));
-      const push = (message: SiMessage) =>
-        setThreads((current) => ({
-          ...current,
-          [investigationId]: [...(current[investigationId] ?? []), message],
-        }));
-      try {
-        const proposal = await api.planExperiment(modelId, question);
-        push({ id: nextMessageId.current++, role: "si", kind: "plan", modelId, proposal });
-      } catch (caught) {
-        let text = caught instanceof Error ? caught.message : String(caught);
-        let questions: string[] = [];
-        if (caught instanceof ApiError) {
-          text = caught.message;
-          const first = (caught.diagnostics as { questions?: string[] }[])[0];
-          if (first && Array.isArray(first.questions)) questions = first.questions;
-        }
-        push({ id: nextMessageId.current++, role: "si", kind: "error", text, questions });
-      } finally {
-        setBusyThreads((current) => ({ ...current, [investigationId]: false }));
-      }
-    },
-    [api],
-  );
-
-  const conversation = useCallback(
-    (investigationId: string) => ({
-      messages: threads[investigationId] ?? [],
-      busy: busyThreads[investigationId] ?? false,
-    }),
-    [threads, busyThreads],
-  );
 
   const progress =
     status === "running" && jobStatus && jobStatus.total_runs !== null
@@ -712,11 +740,21 @@ export function WorkspaceProvider({
     exportEvidence,
     createProject,
     selectProject,
-    reviewProposal,
-    runProposal,
-    plannerNote,
-    conversation,
-    ask,
+    siState,
+    siActions,
+    siProvider,
+    siBusy,
+    siError,
+    siPreview,
+    siPreviewStepId,
+    siLastInterpretation,
+    loadSi,
+    askSi,
+    previewSiStep,
+    clearSiPreview,
+    executeSiStep,
+    rejectSiStep,
+    clearSiError,
   };
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

@@ -120,9 +120,9 @@ class Runner:
                 )
             return "in_process", ()
 
-        from drw.models.registry import registry
+        from drw.models.registry import is_registered
 
-        if spec.model_ref.model_id not in registry:
+        if not is_registered(spec.model_ref.model_id):
             if requested == "subprocess":
                 return "in_process", (
                     Diagnostic(
@@ -356,7 +356,9 @@ class Runner:
                 record.metrics = _scalar_metrics(outcome.result)
                 self._advance(record, RunStatus.SUCCEEDED)
             else:
-                record.error = _first_error(outcome.diagnostics) or "isolated run failed"
+                record.error = (
+                    _first_error(outcome.diagnostics) or "isolated run failed"
+                )
                 self._advance(record, RunStatus.FAILED)
         else:
             start = time.perf_counter()
@@ -378,7 +380,9 @@ class Runner:
                     record.metrics = _scalar_metrics(result)
                     self._advance(record, RunStatus.SUCCEEDED)
                 else:
-                    record.error = _first_error(result.diagnostics) or "model reported failure"
+                    record.error = (
+                        _first_error(result.diagnostics) or "model reported failure"
+                    )
             if record.status == RunStatus.RUNNING:
                 self._advance(record, RunStatus.FAILED)
             record.duration_s = time.perf_counter() - start
@@ -432,7 +436,9 @@ class Runner:
         # A single comparison already carries both the absolute delta and the
         # relative change, so declaring both methods yields one artifact per
         # (variant, output) rather than duplicate rows.
-        requested = [a.method for a in spec.analyses if a.method in ("delta", "relative_delta")]
+        requested = [
+            a.method for a in spec.analyses if a.method in ("delta", "relative_delta")
+        ]
         method_label = "+".join(dict.fromkeys(requested)) or "delta"
         outputs = spec.outputs or None
         baseline_outputs = set(baseline.result.output_names())

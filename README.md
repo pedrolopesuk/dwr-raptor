@@ -110,6 +110,20 @@ metadata are sent to it; simulation data and results are not. See
 [`docs/ai/README.md`](docs/ai/README.md) and
 [`docs/architecture/ADR-0011-ai-planner.md`](docs/architecture/ADR-0011-ai-planner.md).
 
+**SI (Scientific Intelligence)** is the primary AI interface of an investigation:
+it turns a question into a structured, inspectable plan, requires explicit approval
+for every step that creates or modifies an artifact, executes it through DRW's
+controlled action registry, and interprets the result (what it establishes and what
+it does not). SI can also **generate a model from a structured specification**
+(`create_model`, compiled by a bounded ODE compiler - never LLM-authored code) and
+**simulate** it (`simulate`), storing the output as an explicitly synthetic dataset
+that the empirical guards refuse to treat as evidence. SI never executes code it
+generates. See
+[`docs/ai/scientific-intelligence.md`](docs/ai/scientific-intelligence.md),
+[`docs/architecture/ADR-0028-scientific-intelligence.md`](docs/architecture/ADR-0028-scientific-intelligence.md)
+and
+[`docs/architecture/ADR-0029-controlled-model-compilation-and-simulation.md`](docs/architecture/ADR-0029-controlled-model-compilation-and-simulation.md).
+
 See [`apps/web/README.md`](apps/web/README.md) and
 [`docs/architecture/ADR-0008-web-boundary.md`](docs/architecture/ADR-0008-web-boundary.md).
 
@@ -172,6 +186,16 @@ python -m drw identifiability exp-1d700f7ad478 --factors beta,predator0 --output
 # Separate axes: agreement / independence / (optional) acceptance. `drw validation
 # list|get|verify|staleness` inspect stored results.
 python -m drw validation run exp-1d700f7ad478 --config validation.json --persist --workspace .drw/web-workspace
+
+# Scientific Intelligence: list the controlled action registry, ask a question to
+# get a structured plan, inspect exactly what a step will run, then approve it.
+# Nothing runs without approval; SI never executes code it generates.
+python -m drw si actions
+python -m drw si ask draft "Design an experiment to see how alpha changes the prey peak." \
+    --model predator-prey --workspace .drw/web-workspace
+python -m drw si preview draft step-4 --model predator-prey --workspace .drw/web-workspace
+python -m drw si execute draft step-4 --model predator-prey --approve --workspace .drw/web-workspace
+python -m drw si state draft --workspace .drw/web-workspace
 ```
 
 ## Execution, isolation and timeouts

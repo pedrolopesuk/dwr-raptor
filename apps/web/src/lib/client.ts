@@ -33,6 +33,12 @@ import type {
   Project,
   ReproduceReport,
   SensitivityData,
+  SIAskResponse,
+  SIActionPreview,
+  SIActionsResponse,
+  SIExecuteResponse,
+  SIInvestigationState,
+  SIStateResponse,
   SobolReport,
   UncertaintySummary,
   ValidationConfig,
@@ -118,6 +124,31 @@ export interface DrwClient {
   ): Promise<{ validation: ValidationOutcome; ref: ValidationRef }>;
   verifyValidation(validationId: string): Promise<ValidationVerification>;
   checkValidationStaleness(validationId: string): Promise<ValidationStaleness>;
+  siActions(): Promise<SIActionsResponse>;
+  siState(
+    investigationId: string,
+    options?: { projectId?: string; modelId?: string },
+  ): Promise<SIStateResponse>;
+  siAsk(
+    investigationId: string,
+    question: string,
+    options?: { projectId?: string; modelId?: string },
+  ): Promise<SIAskResponse>;
+  siPreview(
+    investigationId: string,
+    stepId: string,
+    options?: { modelId?: string; planId?: string },
+  ): Promise<SIActionPreview>;
+  siExecute(
+    investigationId: string,
+    stepId: string,
+    options?: { approve?: boolean; modelId?: string; planId?: string },
+  ): Promise<SIExecuteResponse>;
+  siReject(
+    investigationId: string,
+    stepId: string,
+    options?: { modelId?: string; planId?: string },
+  ): Promise<SIInvestigationState>;
 }
 
 export class ApiError extends Error {
@@ -347,5 +378,44 @@ export function createFetchClient(): DrwClient {
           `/api/validations/${encodeURIComponent(validationId)}/staleness`,
         )
       ).staleness,
+    siActions: () => request<SIActionsResponse>("/api/si/actions"),
+    siState: (investigationId, options) => {
+      const query = new URLSearchParams();
+      if (options?.modelId) query.set("model_id", options.modelId);
+      if (options?.projectId) query.set("project_id", options.projectId);
+      const suffix = query.toString() ? `?${query.toString()}` : "";
+      return request<SIStateResponse>(
+        `/api/si/${encodeURIComponent(investigationId)}/state${suffix}`,
+      );
+    },
+    siAsk: (investigationId, question, options) =>
+      request<SIAskResponse>(
+        `/api/si/${encodeURIComponent(investigationId)}/ask`,
+        post({ question, model_id: options?.modelId, project_id: options?.projectId }),
+      ),
+    siPreview: async (investigationId, stepId, options) =>
+      (
+        await request<{ preview: SIActionPreview }>(
+          `/api/si/${encodeURIComponent(investigationId)}/preview`,
+          post({ step_id: stepId, model_id: options?.modelId, plan_id: options?.planId }),
+        )
+      ).preview,
+    siExecute: (investigationId, stepId, options) =>
+      request<SIExecuteResponse>(
+        `/api/si/${encodeURIComponent(investigationId)}/execute`,
+        post({
+          step_id: stepId,
+          approve: options?.approve ?? true,
+          model_id: options?.modelId,
+          plan_id: options?.planId,
+        }),
+      ),
+    siReject: async (investigationId, stepId, options) =>
+      (
+        await request<{ state: SIInvestigationState }>(
+          `/api/si/${encodeURIComponent(investigationId)}/reject`,
+          post({ step_id: stepId, model_id: options?.modelId, plan_id: options?.planId }),
+        )
+      ).state,
   };
 }

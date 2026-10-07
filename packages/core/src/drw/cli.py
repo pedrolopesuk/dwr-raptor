@@ -34,13 +34,19 @@ def build_parser() -> argparse.ArgumentParser:
     describe = sub.add_parser("describe", help="print a model's typed contract")
     describe.add_argument("model")
 
-    validate = sub.add_parser("validate", help="validate an experiment spec (no execution)")
+    validate = sub.add_parser(
+        "validate", help="validate an experiment spec (no execution)"
+    )
     validate.add_argument("spec")
 
     run = sub.add_parser("run", help="run an experiment and export an evidence package")
     run.add_argument("spec")
-    run.add_argument("--out", default=".drw/run", help="output directory for the evidence package")
-    run.add_argument("--zip", action="store_true", dest="zip_bundle", help="also write a zip bundle")
+    run.add_argument(
+        "--out", default=".drw/run", help="output directory for the evidence package"
+    )
+    run.add_argument(
+        "--zip", action="store_true", dest="zip_bundle", help="also write a zip bundle"
+    )
     run.add_argument(
         "--isolation",
         choices=["in_process", "subprocess"],
@@ -53,7 +59,9 @@ def build_parser() -> argparse.ArgumentParser:
     demo.add_argument("--out", default=".drw/demo")
     demo.add_argument("--zip", action="store_true", dest="zip_bundle")
 
-    export = sub.add_parser("export-schemas", help="export JSON Schemas for the typed contracts")
+    export = sub.add_parser(
+        "export-schemas", help="export JSON Schemas for the typed contracts"
+    )
     export.add_argument("--out", default="packages/experiment-spec/schema")
 
     verify = sub.add_parser(
@@ -73,7 +81,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="relative tolerance: pass criterion is |fresh-ref| <= atol + rtol*|ref|",
     )
     reproduce.add_argument(
-        "--atol", type=float, required=True, help="absolute tolerance for the same criterion"
+        "--atol",
+        type=float,
+        required=True,
+        help="absolute tolerance for the same criterion",
     )
     reproduce.add_argument(
         "--workspace",
@@ -100,7 +111,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sobol.add_argument("experiment_id")
     sobol.add_argument(
-        "--output", default=None, help="scalar output to analyse (default: primary scalar output)"
+        "--output",
+        default=None,
+        help="scalar output to analyse (default: primary scalar output)",
     )
     sobol.add_argument(
         "--factors",
@@ -153,7 +166,9 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_STEP_SCALE,
         help=f"relative finite-difference step h = max(step-scale*|theta|, absolute) (default {DEFAULT_STEP_SCALE:g})",
     )
-    identifiability.add_argument("--seed", type=int, default=0, help="accepted for interface parity")
+    identifiability.add_argument(
+        "--seed", type=int, default=0, help="accepted for interface parity"
+    )
     identifiability.add_argument(
         "--rank-tolerance",
         type=float,
@@ -173,7 +188,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     dataset = sub.add_parser(
-        "dataset", help="inspect and import scientific datasets (CSV), and manage stored datasets"
+        "dataset",
+        help="inspect and import scientific datasets (CSV), and manage stored datasets",
     )
     dataset_sub = dataset.add_subparsers(dest="dataset_command", required=True)
 
@@ -181,9 +197,14 @@ def build_parser() -> argparse.ArgumentParser:
         "inspect", help="inspect a CSV file (advisory; does not persist anything)"
     )
     ds_inspect.add_argument("file")
-    ds_inspect.add_argument("--delimiter", default=None, help="field delimiter (default: sniff)")
     ds_inspect.add_argument(
-        "--no-header", action="store_true", dest="no_header", help="the file has no header row"
+        "--delimiter", default=None, help="field delimiter (default: sniff)"
+    )
+    ds_inspect.add_argument(
+        "--no-header",
+        action="store_true",
+        dest="no_header",
+        help="the file has no header row",
     )
     ds_inspect.add_argument(
         "--missing-code",
@@ -192,13 +213,22 @@ def build_parser() -> argparse.ArgumentParser:
         dest="missing_codes",
         help="treat this cell value as missing (repeatable)",
     )
-    ds_inspect.add_argument("--json", action="store_true", dest="as_json", help="emit JSON")
+    ds_inspect.add_argument(
+        "--json", action="store_true", dest="as_json", help="emit JSON"
+    )
 
-    ds_import = dataset_sub.add_parser("import", help="import a CSV file as an immutable dataset")
+    ds_import = dataset_sub.add_parser(
+        "import", help="import a CSV file as an immutable dataset"
+    )
     ds_import.add_argument("file")
-    ds_import.add_argument("--config", required=True, help="path to a JSON import configuration")
     ds_import.add_argument(
-        "--dry-run", action="store_true", dest="dry_run", help="validate only; write nothing"
+        "--config", required=True, help="path to a JSON import configuration"
+    )
+    ds_import.add_argument(
+        "--dry-run",
+        action="store_true",
+        dest="dry_run",
+        help="validate only; write nothing",
     )
     ds_import.add_argument("--workspace", default=None)
 
@@ -211,7 +241,9 @@ def build_parser() -> argparse.ArgumentParser:
     ds_describe.add_argument("--workspace", default=None)
     ds_describe.add_argument("--json", action="store_true", dest="as_json")
 
-    ds_verify = dataset_sub.add_parser("verify", help="verify a stored dataset (read-only)")
+    ds_verify = dataset_sub.add_parser(
+        "verify", help="verify a stored dataset (read-only)"
+    )
     ds_verify.add_argument("dataset_id")
     ds_verify.add_argument("--workspace", default=None)
 
@@ -221,15 +253,43 @@ def build_parser() -> argparse.ArgumentParser:
     )
     evaluate.add_argument("experiment_id")
     evaluate.add_argument("--run", default="baseline", help="run id, or 'baseline'")
-    evaluate.add_argument("--mapping", required=True, help="path to an ObservationMapping JSON file")
-    evaluate.add_argument("--metric", action="append", default=None, dest="metrics", help="metric (repeatable)")
-    evaluate.add_argument("--relative", action="store_true", dest="relative", help="include relative residuals/metrics")
-    evaluate.add_argument("--weighted", action="store_true", dest="weighted", help="include normalized (weighted) residuals/metrics")
-    evaluate.add_argument("--interpolate", action="store_true", dest="interpolate", help="allow opt-in linear interpolation")
+    evaluate.add_argument(
+        "--mapping", required=True, help="path to an ObservationMapping JSON file"
+    )
+    evaluate.add_argument(
+        "--metric",
+        action="append",
+        default=None,
+        dest="metrics",
+        help="metric (repeatable)",
+    )
+    evaluate.add_argument(
+        "--relative",
+        action="store_true",
+        dest="relative",
+        help="include relative residuals/metrics",
+    )
+    evaluate.add_argument(
+        "--weighted",
+        action="store_true",
+        dest="weighted",
+        help="include normalized (weighted) residuals/metrics",
+    )
+    evaluate.add_argument(
+        "--interpolate",
+        action="store_true",
+        dest="interpolate",
+        help="allow opt-in linear interpolation",
+    )
     evaluate.add_argument("--tolerance", type=float, default=0.0, dest="tolerance")
     evaluate.add_argument("--time-origin", default=None, dest="time_origin")
     evaluate.add_argument("--dof", type=int, default=None, dest="dof")
-    evaluate.add_argument("--dry-run", action="store_true", dest="dry_run", help="validate and report diagnostics only")
+    evaluate.add_argument(
+        "--dry-run",
+        action="store_true",
+        dest="dry_run",
+        help="validate and report diagnostics only",
+    )
     evaluate.add_argument("--json", action="store_true", dest="as_json")
     evaluate.add_argument("--workspace", default=None)
 
@@ -238,14 +298,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="calibrate model parameters against a dataset (serial, bounded; read-only w.r.t. the experiment)",
     )
     calibrate.add_argument("experiment_id")
-    calibrate.add_argument("--config", required=True, help="path to a CalibrationConfig JSON file")
+    calibrate.add_argument(
+        "--config", required=True, help="path to a CalibrationConfig JSON file"
+    )
     calibrate.add_argument(
         "--dry-run",
         action="store_true",
         dest="dry_run",
         help="validate configuration, dataset, mapping and objective; execute no model runs",
     )
-    calibrate.add_argument("--persist", action="store_true", help="store the calibration result")
+    calibrate.add_argument(
+        "--persist", action="store_true", help="store the calibration result"
+    )
     calibrate.add_argument("--json", action="store_true", dest="as_json")
     calibrate.add_argument("--workspace", default=None)
 
@@ -260,14 +324,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="run a validation: frozen parameters, independent datasets, M12A evaluation",
     )
     vrun.add_argument("experiment_id")
-    vrun.add_argument("--config", required=True, help="path to a ValidationConfig JSON file")
+    vrun.add_argument(
+        "--config", required=True, help="path to a ValidationConfig JSON file"
+    )
     vrun.add_argument(
         "--dry-run",
         action="store_true",
         dest="dry_run",
         help="validate config, calibration, datasets, mappings and independence; execute nothing",
     )
-    vrun.add_argument("--persist", action="store_true", help="store the validation result")
+    vrun.add_argument(
+        "--persist", action="store_true", help="store the validation result"
+    )
     vrun.add_argument("--json", action="store_true", dest="as_json")
     vrun.add_argument("--workspace", default=None)
 
@@ -280,15 +348,68 @@ def build_parser() -> argparse.ArgumentParser:
     vget.add_argument("--json", action="store_true", dest="as_json")
     vget.add_argument("--workspace", default=None)
 
-    vverify = vsub.add_parser("verify", help="verify a stored validation against its manifest")
+    vverify = vsub.add_parser(
+        "verify", help="verify a stored validation against its manifest"
+    )
     vverify.add_argument("validation_id")
     vverify.add_argument("--json", action="store_true", dest="as_json")
     vverify.add_argument("--workspace", default=None)
 
-    vstale = vsub.add_parser("staleness", help="report whether a stored validation is still current")
+    vstale = vsub.add_parser(
+        "staleness", help="report whether a stored validation is still current"
+    )
     vstale.add_argument("validation_id")
     vstale.add_argument("--json", action="store_true", dest="as_json")
     vstale.add_argument("--workspace", default=None)
+
+    si = sub.add_parser(
+        "si", help="Scientific Intelligence: plan, approve and run an investigation"
+    )
+    si_sub = si.add_subparsers(dest="si_command", required=True)
+
+    si_actions = si_sub.add_parser("actions", help="list the SI action registry")
+    si_actions.add_argument("--json", action="store_true", dest="as_json")
+
+    si_state = si_sub.add_parser(
+        "state", help="show the durable SI state of an investigation"
+    )
+    si_state.add_argument("investigation_id")
+    si_state.add_argument("--project", default="default")
+    si_state.add_argument("--json", action="store_true", dest="as_json")
+    si_state.add_argument("--workspace", default=None)
+
+    si_ask = si_sub.add_parser(
+        "ask", help="ask SI a question and record a structured plan"
+    )
+    si_ask.add_argument("investigation_id")
+    si_ask.add_argument("question")
+    si_ask.add_argument("--model", default=None)
+    si_ask.add_argument("--project", default="default")
+    si_ask.add_argument("--json", action="store_true", dest="as_json")
+    si_ask.add_argument("--workspace", default=None)
+
+    si_preview = si_sub.add_parser(
+        "preview", help="show exactly what a plan step will run"
+    )
+    si_preview.add_argument("investigation_id")
+    si_preview.add_argument("step_id")
+    si_preview.add_argument("--model", default=None)
+    si_preview.add_argument("--json", action="store_true", dest="as_json")
+    si_preview.add_argument("--workspace", default=None)
+
+    si_execute = si_sub.add_parser(
+        "execute", help="approve and execute one plan step through the action registry"
+    )
+    si_execute.add_argument("investigation_id")
+    si_execute.add_argument("step_id")
+    si_execute.add_argument("--model", default=None)
+    si_execute.add_argument(
+        "--approve",
+        action="store_true",
+        help="explicitly approve a mutating step (required for any non read-only action)",
+    )
+    si_execute.add_argument("--json", action="store_true", dest="as_json")
+    si_execute.add_argument("--workspace", default=None)
 
     return parser
 
@@ -305,8 +426,10 @@ def _cmd_describe(args: argparse.Namespace) -> int:
     print(schema.description)
     print(f"runtime: {schema.runtime}")
     print("\nParameters:")
-    print(f"  {'name':<14} {'type':<12} {'role':<8} {'unit':<16} {'nominal':>10} "
-          f"{'lower':>10} {'upper':>10}")
+    print(
+        f"  {'name':<14} {'type':<12} {'role':<8} {'unit':<16} {'nominal':>10} "
+        f"{'lower':>10} {'upper':>10}"
+    )
     for param in schema.parameters:
         bounds = (
             f"{param.lower:>10g} {param.upper:>10g}"
@@ -341,7 +464,11 @@ def _cmd_run(args: argparse.Namespace) -> int:
     spec = load_experiment_spec(args.spec)
     if args.isolation is not None:
         spec = spec.model_copy(
-            update={"execution": spec.execution.model_copy(update={"isolation": args.isolation})}
+            update={
+                "execution": spec.execution.model_copy(
+                    update={"isolation": args.isolation}
+                )
+            }
         )
     runner = Runner()
     try:
@@ -354,8 +481,10 @@ def _cmd_run(args: argparse.Namespace) -> int:
     manifest = build_evidence_package(result, args.out, zip_bundle=args.zip_bundle)
     print(f"experiment: {result.experiment_id}")
     print(f"isolation: {result.isolation}")
-    print(f"runs: {len(result.runs)} ({len(result.succeeded_runs)} succeeded, "
-          f"{len(result.failed_runs)} failed)")
+    print(
+        f"runs: {len(result.runs)} ({len(result.succeeded_runs)} succeeded, "
+        f"{len(result.failed_runs)} failed)"
+    )
     print(f"comparisons: {len(result.comparisons)}")
     for comparison in result.comparisons:
         print(
@@ -396,10 +525,15 @@ def _cmd_export_schemas(args: argparse.Namespace) -> int:
 
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    targets = {"model-schema.schema.json": ModelSchema, "experiment-spec.schema.json": ExperimentSpec}
+    targets = {
+        "model-schema.schema.json": ModelSchema,
+        "experiment-spec.schema.json": ExperimentSpec,
+    }
     for filename, model in targets.items():
         path = out / filename
-        path.write_text(dumps_pretty(model.model_json_schema()) + "\n", encoding="utf-8")
+        path.write_text(
+            dumps_pretty(model.model_json_schema()) + "\n", encoding="utf-8"
+        )
         print(f"wrote {path}")
     return 0
 
@@ -446,10 +580,14 @@ def _cmd_reproduce(args: argparse.Namespace) -> int:
     )
 
     print(f"experiment: {report.experiment_id}")
-    print(f"tolerances: rtol={report.tolerances.rtol:g} atol={report.tolerances.atol:g}")
+    print(
+        f"tolerances: rtol={report.tolerances.rtol:g} atol={report.tolerances.atol:g}"
+    )
     print(f"verdict: {report.verdict}")
     print(f"reference runs (stored): {', '.join(report.reference_run_ids) or '-'}")
-    print(f"fresh runs (in-memory, not persisted): {', '.join(report.fresh_run_ids) or '-'}")
+    print(
+        f"fresh runs (in-memory, not persisted): {', '.join(report.fresh_run_ids) or '-'}"
+    )
     if report.reference_run_ids and report.reference_run_ids == report.fresh_run_ids:
         print(
             "note: the fresh run ids equal the stored ids because the deterministic "
@@ -465,7 +603,9 @@ def _cmd_reproduce(args: argparse.Namespace) -> int:
             state = "different"
         else:
             state = "incomparable"
-        print(f"  run {run.index} [{run.label}] {run.reference_run_id} -> {run.fresh_run_id or '-'}: {state}")
+        print(
+            f"  run {run.index} [{run.label}] {run.reference_run_id} -> {run.fresh_run_id or '-'}: {state}"
+        )
         for output in run.outputs:
             print(
                 f"    {output.output} ({output.unit}): {output.status} "
@@ -516,9 +656,19 @@ def _cmd_uncertainty(args: argparse.Namespace) -> int:
     for output in summary.outputs:
         values = " ".join(
             f"{_g(value):>12}"
-            for value in (output.mean, output.std, output.minimum, output.maximum, output.p05, output.p50, output.p95)
+            for value in (
+                output.mean,
+                output.std,
+                output.minimum,
+                output.maximum,
+                output.p05,
+                output.p50,
+                output.p95,
+            )
         )
-        print(f"  {output.output:<16} {output.unit:<12} {output.valid_samples:>5} {values}")
+        print(
+            f"  {output.output:<16} {output.unit:<12} {output.valid_samples:>5} {values}"
+        )
         if output.exclusions:
             print(f"      exclusions: {output.exclusions}")
         if output.note:
@@ -543,7 +693,9 @@ def _cmd_sobol(args: argparse.Namespace) -> int:
     from drw.store import ExperimentStore, default_store
 
     store = ExperimentStore(args.workspace) if args.workspace else default_store()
-    factors = [item.strip() for item in args.factors.split(",")] if args.factors else None
+    factors = (
+        [item.strip() for item in args.factors.split(",")] if args.factors else None
+    )
     report = sobol_indices_for_experiment(
         args.experiment_id,
         store,
@@ -569,7 +721,9 @@ def _cmd_sobol(args: argparse.Namespace) -> int:
     for row in report.results:
         s1 = "n/a" if row.s1 is None else f"{row.s1:.4f}"
         st = "n/a" if row.st is None else f"{row.st:.4f}"
-        print(f"  {row.name:<16} {s1:>10} {_ci(row.s1_ci):>22} {st:>10} {_ci(row.st_ci):>22}")
+        print(
+            f"  {row.name:<16} {s1:>10} {_ci(row.s1_ci):>22} {st:>10} {_ci(row.st_ci):>22}"
+        )
     if report.note:
         print(f"note: {report.note}")
     print(
@@ -584,8 +738,12 @@ def _cmd_identifiability(args: argparse.Namespace) -> int:
     from drw.store import ExperimentStore, default_store
 
     store = ExperimentStore(args.workspace) if args.workspace else default_store()
-    factors = [item.strip() for item in args.factors.split(",")] if args.factors else None
-    outputs = [item.strip() for item in args.outputs.split(",")] if args.outputs else None
+    factors = (
+        [item.strip() for item in args.factors.split(",")] if args.factors else None
+    )
+    outputs = (
+        [item.strip() for item in args.outputs.split(",")] if args.outputs else None
+    )
     report = identifiability_for_experiment(
         args.experiment_id,
         store,
@@ -618,8 +776,13 @@ def _cmd_identifiability(args: argparse.Namespace) -> int:
         f"numerical rank: {report.numerical_rank}/{report.dimensions}  "
         f"condition number: {_g(report.condition_number)}"
     )
-    print("singular values: " + ", ".join(f"{value:.6g}" for value in report.singular_values))
-    problematic = [direction for direction in report.directions if direction.problematic]
+    print(
+        "singular values: "
+        + ", ".join(f"{value:.6g}" for value in report.singular_values)
+    )
+    problematic = [
+        direction for direction in report.directions if direction.problematic
+    ]
     if problematic:
         print("poorly distinguishable directions (local):")
         for direction in problematic:
@@ -633,7 +796,9 @@ def _cmd_identifiability(args: argparse.Namespace) -> int:
     else:
         print("no poorly distinguishable direction was detected")
     for pair in report.factor_correlations:
-        print(f"collinear pair {pair.first}/{pair.second}: correlation={pair.correlation:+.4f}")
+        print(
+            f"collinear pair {pair.first}/{pair.second}: correlation={pair.correlation:+.4f}"
+        )
     if report.note:
         print(f"note: {report.note}")
     print(
@@ -664,7 +829,9 @@ def _cmd_dataset(args: argparse.Namespace) -> int:
             f"header={inspection.has_header} rows={inspection.row_count} "
             f"columns={len(inspection.columns)}"
         )
-        print(f"  {'column':<20} {'kind':<11} {'missing':>7} {'nonfinite':>9}  suggested")
+        print(
+            f"  {'column':<20} {'kind':<11} {'missing':>7} {'nonfinite':>9}  suggested"
+        )
         for column in inspection.columns:
             suggestion = column.suggested_role or ""
             if column.suggested_uncertainty_for:
@@ -674,8 +841,12 @@ def _cmd_dataset(args: argparse.Namespace) -> int:
                 f"{column.non_finite_count:>9}  {suggestion}"
             )
         for diagnostic in inspection.diagnostics:
-            print(f"[{diagnostic.level.upper()}] {diagnostic.code}: {diagnostic.message}")
-        print("note: detections are advisory; supply an explicit configuration to import.")
+            print(
+                f"[{diagnostic.level.upper()}] {diagnostic.code}: {diagnostic.message}"
+            )
+        print(
+            "note: detections are advisory; supply an explicit configuration to import."
+        )
         return 0
 
     store = DatasetStore(args.workspace) if args.workspace else default_dataset_store()
@@ -688,7 +859,9 @@ def _cmd_dataset(args: argparse.Namespace) -> int:
         config = CsvImportConfig.model_validate(raw)
         ref = import_csv(args.file, config, store, dry_run=args.dry_run)
         if args.dry_run:
-            print(f"validated (dry run): {ref.dataset_id} content_hash={ref.content_hash}")
+            print(
+                f"validated (dry run): {ref.dataset_id} content_hash={ref.content_hash}"
+            )
             print("no dataset was written")
         else:
             print(f"imported dataset: {ref.dataset_id}")
@@ -706,14 +879,23 @@ def _cmd_dataset(args: argparse.Namespace) -> int:
             print("no datasets")
             return 0
         for ref in refs:
-            print(f"{ref.dataset_id}  {ref.name}  {ref.created_at}  {ref.content_hash[:12]}")
+            print(
+                f"{ref.dataset_id}  {ref.name}  {ref.created_at}  {ref.content_hash[:12]}"
+            )
         return 0
 
     if command == "describe":
         dataset = store.load(args.dataset_id)
         ref = store.ref(args.dataset_id)
         if args.as_json:
-            print(dumps_pretty({"ref": ref.model_dump(mode="json"), "dataset": dataset.model_dump(mode="json")}))
+            print(
+                dumps_pretty(
+                    {
+                        "ref": ref.model_dump(mode="json"),
+                        "dataset": dataset.model_dump(mode="json"),
+                    }
+                )
+            )
             return 0
         print(f"dataset: {ref.dataset_id}  name={ref.name!r}")
         print(f"content_hash: {ref.content_hash}")
@@ -763,7 +945,9 @@ def _cmd_evaluate(args: argparse.Namespace) -> int:
     from drw.store import ExperimentStore, default_store
 
     store = ExperimentStore(args.workspace) if args.workspace else default_store()
-    datasets = DatasetStore(args.workspace) if args.workspace else default_dataset_store()
+    datasets = (
+        DatasetStore(args.workspace) if args.workspace else default_dataset_store()
+    )
 
     loaded = store.load(args.experiment_id)
     spec = ExperimentSpec.model_validate(loaded["spec"])
@@ -775,9 +959,13 @@ def _cmd_evaluate(args: argparse.Namespace) -> int:
     if args.run == "baseline":
         run = runs[0]
     else:
-        run = next((candidate for candidate in runs if candidate.run_id == args.run), None)
+        run = next(
+            (candidate for candidate in runs if candidate.run_id == args.run), None
+        )
         if run is None:
-            raise ValueError(f"experiment {args.experiment_id!r} has no run {args.run!r}")
+            raise ValueError(
+                f"experiment {args.experiment_id!r} has no run {args.run!r}"
+            )
 
     try:
         raw_mapping = json.loads(Path(args.mapping).read_text(encoding="utf-8"))
@@ -816,10 +1004,14 @@ def _cmd_evaluate(args: argparse.Namespace) -> int:
         return 0 if result.ok else 1
 
     print(f"experiment: {result.experiment_id}  run: {result.run_id}  ok: {result.ok}")
-    print(f"dataset: {result.dataset.dataset_id}  mapping_hash: {result.mapping_hash[:12]}…")
+    print(
+        f"dataset: {result.dataset.dataset_id}  mapping_hash: {result.mapping_hash[:12]}…"
+    )
     if args.dry_run:
         for diagnostic in result.diagnostics:
-            print(f"[{diagnostic.level.upper()}] {diagnostic.code}: {diagnostic.message}")
+            print(
+                f"[{diagnostic.level.upper()}] {diagnostic.code}: {diagnostic.message}"
+            )
         return 0 if result.ok else 1
 
     for pair in result.pairs:
@@ -848,12 +1040,16 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
     from drw.store import ExperimentStore, default_store
 
     store = ExperimentStore(args.workspace) if args.workspace else default_store()
-    datasets = DatasetStore(args.workspace) if args.workspace else default_dataset_store()
+    datasets = (
+        DatasetStore(args.workspace) if args.workspace else default_dataset_store()
+    )
 
     try:
         raw_config = json.loads(Path(args.config).read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        raise ValueError(f"could not read calibration config {args.config!r}: {exc}") from exc
+        raise ValueError(
+            f"could not read calibration config {args.config!r}: {exc}"
+        ) from exc
     config = CalibrationConfig.model_validate(raw_config)
     # The command-line experiment id is authoritative.
     config = config.model_copy(update={"experiment_id": args.experiment_id})
@@ -869,7 +1065,9 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
         if not diagnostics:
             print("no diagnostics: calibration is ready to run")
         for diagnostic in diagnostics:
-            print(f"[{diagnostic.level.upper()}] {diagnostic.code}: {diagnostic.message}")
+            print(
+                f"[{diagnostic.level.upper()}] {diagnostic.code}: {diagnostic.message}"
+            )
         print(
             f"dry run: free={[item.name for item in config.free]} "
             f"optimizer={config.optimizer.name} metric={pair.observation}->{pair.output} "
@@ -888,16 +1086,22 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
         print(dumps_pretty(payload))
         return 0 if result.best is not None else 1
 
-    print(f"experiment: {result.experiment_id}  status: {result.status}  "
-          f"stop_reason: {result.stop_reason}  converged: {result.converged}")
+    print(
+        f"experiment: {result.experiment_id}  status: {result.status}  "
+        f"stop_reason: {result.stop_reason}  converged: {result.converged}"
+    )
     print(
         f"evaluations: {result.evaluations_completed} completed, "
         f"{result.evaluations_invalid} invalid (cap {result.evaluations_requested})  "
         f"iterations: {result.iterations}  wall: {result.wall_seconds:.3f}s"
     )
     if result.best is not None:
-        params = ", ".join(f"{name}={value:.6g}" for name, value in result.best.parameters.items())
-        print(f"best objective ({result.objective.metric}): {result.objective.value:.6g}")
+        params = ", ".join(
+            f"{name}={value:.6g}" for name, value in result.best.parameters.items()
+        )
+        print(
+            f"best objective ({result.objective.metric}): {result.objective.value:.6g}"
+        )
         print(f"best parameters: {params}")
     else:
         print("no usable best candidate was found")
@@ -938,8 +1142,7 @@ def _cmd_validation(args: argparse.Namespace) -> int:
             else:
                 for ref in refs:
                     print(
-                        f"{ref.validation_id}  {ref.agreement_status:<12} "
-                        f"exp={ref.experiment_id}"
+                        f"{ref.validation_id}  {ref.agreement_status:<12} exp={ref.experiment_id}"
                     )
             return 0
         if command == "get":
@@ -975,7 +1178,9 @@ def _cmd_validation(args: argparse.Namespace) -> int:
         if args.as_json:
             print(dumps_pretty(staleness.model_dump(mode="json")))
         else:
-            print(f"{staleness.validation_id}: {'fresh' if staleness.fresh else 'stale'}")
+            print(
+                f"{staleness.validation_id}: {'fresh' if staleness.fresh else 'stale'}"
+            )
             for reason in staleness.reasons:
                 print(f"  - {reason}")
         return 0 if staleness.fresh else 1
@@ -986,7 +1191,9 @@ def _cmd_validation(args: argparse.Namespace) -> int:
     try:
         raw_config = json.loads(Path(args.config).read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        raise ValueError(f"could not read validation config {args.config!r}: {exc}") from exc
+        raise ValueError(
+            f"could not read validation config {args.config!r}: {exc}"
+        ) from exc
     config = ValidationConfig.model_validate(raw_config)
     # The command-line experiment id is authoritative.
     config = config.model_copy(update={"experiment_id": args.experiment_id})
@@ -1004,7 +1211,9 @@ def _cmd_validation(args: argparse.Namespace) -> int:
         reports = []
         for item in config.datasets:
             dataset = datasets.load(item.dataset.dataset_id)
-            diagnostics.extend(validate_mapping(item.mapping, dataset=dataset, schema=schema))
+            diagnostics.extend(
+                validate_mapping(item.mapping, dataset=dataset, schema=schema)
+            )
             reports.append(
                 (
                     item,
@@ -1016,7 +1225,9 @@ def _cmd_validation(args: argparse.Namespace) -> int:
         if not diagnostics:
             print("no diagnostics: validation is ready to run")
         for diagnostic in diagnostics:
-            print(f"[{diagnostic.level.upper()}] {diagnostic.code}: {diagnostic.message}")
+            print(
+                f"[{diagnostic.level.upper()}] {diagnostic.code}: {diagnostic.message}"
+            )
         for item, report in reports:
             label = item.label or item.dataset.dataset_id
             print(f"dataset {label}: independence={report.status} ({report.note})")
@@ -1055,11 +1266,161 @@ def _cmd_validation(args: argparse.Namespace) -> int:
                 f"independence={item.independence.status}"
             )
         for diagnostic in result.diagnostics:
-            print(f"[{diagnostic.level.upper()}] {diagnostic.code}: {diagnostic.message}")
+            print(
+                f"[{diagnostic.level.upper()}] {diagnostic.code}: {diagnostic.message}"
+            )
         if ref is not None:
             print(f"stored validation: {ref.validation_id}")
         print(f"note: {result.note}")
     return 0 if any(item.agreement == "evaluated" for item in result.datasets) else 1
+
+
+def _cmd_si(args: argparse.Namespace) -> int:
+    from drw.schema.serialization import dumps_pretty
+    from drw.si import approve_and_execute, ask, get_state, list_actions, preview_step
+    from drw.si.actions import SIActionError
+    from drw.store import ExperimentStore, default_store
+
+    command = getattr(args, "si_command", None)
+
+    if command == "actions":
+        actions = list_actions()
+        if args.as_json:
+            print(dumps_pretty(actions))
+            return 0
+        print(f"{'action_id':<22} {'category':<11} {'access':<10} {'name'}")
+        for action in actions:
+            access = "read-only" if action["read_only"] else "approval"
+            supported = "" if action["supported"] else "  [unsupported]"
+            print(
+                f"{action['action_id']:<22} {action['category']:<11} {access:<10} "
+                f"{action['name']}{supported}"
+            )
+        return 0
+
+    store = ExperimentStore(args.workspace) if args.workspace else default_store()
+    try:
+        if command == "state":
+            state = get_state(store, args.investigation_id, project_id=args.project)
+            if args.as_json:
+                print(dumps_pretty(state.model_dump(mode="json")))
+                return 0
+            print(f"investigation: {state.investigation_id}")
+            print(f"objective: {state.objective or '-'}")
+            print(f"experiments: {', '.join(state.experiments) or '-'}")
+            print(f"datasets: {', '.join(state.datasets) or '-'}")
+            plan = state.current_plan()
+            if plan is not None:
+                print(f"plan {plan.plan_id} ({plan.provider}, used_ai={plan.used_ai}):")
+                for step in plan.steps:
+                    print(
+                        f"  {step.step_id}  {step.action_id:<20} {step.status:<11} "
+                        f"approval={step.approval}"
+                    )
+            if state.unresolved_questions:
+                print("unresolved questions:")
+                for item in state.unresolved_questions:
+                    print(f"  - {item}")
+            return 0
+
+        if command == "ask":
+            analysis, state = ask(
+                store,
+                args.investigation_id,
+                args.question,
+                project_id=args.project,
+                model_id=args.model,
+            )
+            if args.as_json:
+                print(
+                    dumps_pretty(
+                        {
+                            "analysis": analysis.model_dump(mode="json"),
+                            "state": state.model_dump(mode="json"),
+                        }
+                    )
+                )
+                return 0
+            print(analysis.understanding)
+            if analysis.missing_information:
+                print("missing information:")
+                for item in analysis.missing_information:
+                    print(f"  - {item}")
+            if analysis.unsupported_requests:
+                print("not currently supported:")
+                for item in analysis.unsupported_requests:
+                    print(f"  - {item}")
+            if analysis.plan is not None and analysis.plan.steps:
+                print("proposed plan (nothing has run):")
+                for step in analysis.plan.steps:
+                    access = (
+                        "read-only"
+                        if step.approval == "not_required"
+                        else "REQUIRES APPROVAL"
+                    )
+                    print(
+                        f"  {step.step_id}  {step.action_id:<20} [{access}]\n      {step.purpose}"
+                    )
+            for caveat in analysis.caveats:
+                print(f"note: {caveat}")
+            return 0
+
+        if command == "preview":
+            preview = preview_step(
+                store, args.investigation_id, args.step_id, model_id=args.model
+            )
+            if args.as_json:
+                print(dumps_pretty(preview.model_dump(mode="json")))
+                return 0
+            print(f"action: {preview.action_id} ({preview.name})")
+            print(
+                f"read-only: {preview.read_only}  requires approval: {preview.requires_approval}"
+            )
+            print(f"effects: {preview.effects}")
+            print(f"summary: {preview.summary}")
+            print(f"inputs: {dumps_pretty(preview.inputs)}")
+            for diagnostic in preview.input_diagnostics:
+                print(
+                    f"[{diagnostic.level.upper()}] {diagnostic.code}: {diagnostic.message}"
+                )
+            for warning in preview.warnings:
+                print(f"warning: {warning}")
+            return 0
+
+        if command == "execute":
+            execution, interpretation, state = approve_and_execute(
+                store,
+                args.investigation_id,
+                args.step_id,
+                model_id=args.model,
+                approved=args.approve,
+            )
+            if args.as_json:
+                print(
+                    dumps_pretty(
+                        {
+                            "execution": execution.model_dump(mode="json"),
+                            "interpretation": interpretation.model_dump(mode="json"),
+                        }
+                    )
+                )
+            else:
+                print(f"status: {execution.status}  ok: {execution.ok}")
+                print(f"summary: {execution.summary}")
+                if execution.artifacts:
+                    print(f"artifacts: {execution.artifacts}")
+                if execution.error_message:
+                    print(f"error: {execution.error_code}: {execution.error_message}")
+                print(f"interpretation: {interpretation.text}")
+                for item in interpretation.does_not_establish:
+                    print(f"  does not establish: {item}")
+            return 0 if execution.ok else 1
+
+        print(f"error: unknown si command {command!r}", file=sys.stderr)
+        return 2
+    except SIActionError as exc:
+        print(f"error: {exc.message}", file=sys.stderr)
+        return 2
 
 
 _COMMANDS = {
@@ -1078,6 +1439,7 @@ _COMMANDS = {
     "evaluate": _cmd_evaluate,
     "calibrate": _cmd_calibrate,
     "validation": _cmd_validation,
+    "si": _cmd_si,
 }
 
 

@@ -1,12 +1,20 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 
 import { ArrowUp, Attachment } from "@carbon/icons-react";
-import { Button, Select, SelectItem, TextArea } from "@carbon/react";
+import { Button, Select, SelectItem, Tag, TextArea } from "@carbon/react";
 
-import { useWorkspace, type SiMessage } from "@/components/workspace/WorkspaceProvider";
-import type { ExperimentSpec, ModelSummary } from "@/lib/types";
+import { useWorkspace } from "@/components/workspace/WorkspaceProvider";
+import type {
+  ModelSummary,
+  SIActionPreview,
+  SIActionRef,
+  SIAnalysis,
+  SIInterpretation,
+  SIPlan,
+  SIPlanStep,
+} from "@/lib/types";
 
 export interface Suggestion {
   label: string;
@@ -143,106 +151,293 @@ export function Suggestions({
   );
 }
 
-export function PlanCard({
-  message,
-  model,
-  onReview,
-  onRun,
-  running,
-}: {
-  message: Extract<SiMessage, { kind: "plan" }>;
-  model: ModelSummary | undefined;
-  onReview: (spec: ExperimentSpec, modelId: string) => void;
-  onRun: (spec: ExperimentSpec, modelId: string) => void;
-  running: boolean;
-}) {
-  const { proposal, modelId } = message;
-  const spec = proposal.spec;
-  if (proposal.questions.length > 0 || spec === null) {
-    return (
-      <div className="si-plan" data-testid="si-questions">
-        <p className="si-plan__lead">I need a bit more before I can propose a configuration.</p>
-        <ul className="si-plan__list">
-          {proposal.questions.map((q) => (
-            <li key={q}>{q}</li>
+/** SI's structured reading of the current state (known / missing / unsupported). */
+function AnalysisBlock({ analysis }: { analysis: SIAnalysis }) {
+  const lists: { heading: string; items: string[]; tone?: "warn" }[] = [
+    { heading: "Known", items: analysis.known },
+    { heading: "Missing information", items: analysis.missing_information, tone: "warn" },
+    { heading: "Not currently supported", items: analysis.unsupported_requests, tone: "warn" },
+    { heading: "Caveats", items: analysis.caveats },
+  ];
+  return (
+    <div className="si-analysis" data-testid="si-analysis">
+      <p className="si-plan__lead">{analysis.understanding}</p>
+      {analysis.state_summary.length > 0 ? (
+        <ul className="si-plan__list si-plan__list--muted">
+          {analysis.state_summary.map((line) => (
+            <li key={line}>{line}</li>
           ))}
         </ul>
-      </div>
-    );
-  }
-  const steps: string[] = [];
-  const baselineCount = Object.keys(spec.baseline ?? {}).length;
-  steps.push(`Fix a baseline of ${baselineCount} parameter${baselineCount === 1 ? "" : "s"}`);
-  for (const factor of spec.factors ?? []) {
-    steps.push(
-      factor.values && factor.values.length > 0
-        ? `Vary ${factor.parameter} over ${factor.values.join(", ")}`
-        : `Vary ${factor.parameter} in [${factor.lower ?? "?"}, ${factor.upper ?? "?"}]`,
-    );
-  }
-  steps.push(`Observe ${(spec.outputs ?? []).join(", ") || "all outputs"}`);
-  for (const analysis of spec.analyses ?? []) steps.push(`Analyze: ${analysis.method}`);
+      ) : null}
+      {lists
+        .filter((list) => list.items.length > 0)
+        .map((list) => (
+          <div key={list.heading}>
+            <p className="si-plan__heading" data-tone={list.tone}>
+              {list.heading}
+            </p>
+            <ul className="si-plan__list">
+              {list.items.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </div>
+        ))}
+    </div>
+  );
+}
 
+function actionLabel(actionId: string, actions: SIActionRef[]): SIActionRef | undefined {
+  return actions.find((action) => action.action_id === actionId);
+}
+
+function stepStatusTag(step: SIPlanStep): {
+  type: "green" | "blue" | "red" | "magenta" | "gray" | "cool-gray";
+  text: string;
+} {
+  if (step.status === "executed") return { type: "green", text: "Executed" };
+  if (step.status === "failed") return { type: "red", text: "Failed" };
+  if (step.status === "unsupported") return { type: "magenta", text: "Unsupported" };
+  if (step.status === "rejected") return { type: "gray", text: "Rejected" };
+  if (step.status === "approved") return { type: "blue", text: "Approved" };
+  return { type: "cool-gray", text: "Proposed" };
+}
+
+function StepCard({
+  step,
+  action,
+  busy,
+  selected,
+  runnable,
+  onPreview,
+  onExecute,
+  onReject,
+}: {
+  step: SIPlanStep;
+  action: SIActionRef | undefined;
+  busy: boolean;
+  selected: boolean;
+  runnable: boolean;
+  onPreview: () => void;
+  onExecute: () => void;
+  onReject: () => void;
+}) {
+  const pending = step.status === "proposed" || step.status === "approved";
+  const mutating = action ? !action.read_only : true;
+  const tag = stepStatusTag(step);
+  return (
+    <li className="si-step" data-testid={`si-step-${step.step_id}`} data-status={step.status}>
+      <div className="si-step__head">
+        <span className="si-step__action drw-mono">{step.action_id}</span>
+        <Tag type={tag.type} size="sm">
+          {tag.text}
+        </Tag>
+        {mutating ? (
+          <Tag type="outline" size="sm">
+            Requires approval
+          </Tag>
+        ) : (
+          <Tag type="outline" size="sm">
+            Read-only
+          </Tag>
+        )}
+      </div>
+      <p className="si-step__purpose">{step.purpose}</p>
+      {action ? <p className="si-step__name">{action.name}</p> : null}
+      {step.scientific_rationale ? (
+        <p className="si-step__rationale">Why: {step.scientific_rationale}</p>
+      ) : null}
+      {step.execution ? (
+        <p className="si-step__result" data-ok={step.execution.ok}>
+          {step.execution.summary}
+          {step.execution.error_message ? ` — ${step.execution.error_message}` : ""}
+        </p>
+      ) : null}
+      {pending ? (
+        <div className="si-step__actions">
+          <Button
+            kind="ghost"
+            size="sm"
+            onClick={onPreview}
+            data-testid={`si-review-${step.step_id}`}
+            aria-pressed={selected}
+          >
+            Review
+          </Button>
+          <Button
+            size="sm"
+            disabled={busy || !runnable}
+            onClick={onExecute}
+            data-testid={`si-run-${step.step_id}`}
+            title={runnable ? undefined : "Run the earlier steps this one depends on first"}
+          >
+            {mutating ? "Approve & run" : "Run"}
+          </Button>
+          <Button
+            kind="danger--ghost"
+            size="sm"
+            disabled={busy}
+            onClick={onReject}
+            data-testid={`si-reject-${step.step_id}`}
+          >
+            Reject
+          </Button>
+        </div>
+      ) : null}
+    </li>
+  );
+}
+
+function PreviewPanel({ preview }: { preview: SIActionPreview }) {
+  const errors = preview.input_diagnostics.filter((item) => item.level === "error");
+  return (
+    <div className="si-preview" data-testid="si-preview">
+      <p className="si-plan__heading">What will run</p>
+      <p className="si-plan__lead">{preview.summary}</p>
+      <dl className="si-plan__facts">
+        <div>
+          <dt>Action</dt>
+          <dd className="drw-mono">{preview.action_id}</dd>
+        </div>
+        <div>
+          <dt>Effects</dt>
+          <dd>{preview.effects.replace(/_/g, " ")}</dd>
+        </div>
+        <div>
+          <dt>Approval</dt>
+          <dd>{preview.requires_approval ? "Required" : "Not required (read-only)"}</dd>
+        </div>
+      </dl>
+      {Object.keys(preview.inputs).length > 0 ? (
+        <pre className="drw-pre" tabIndex={0} data-testid="si-preview-inputs">
+          {JSON.stringify(preview.inputs, null, 2)}
+        </pre>
+      ) : (
+        <p className="si-plan__note">This step takes no inputs.</p>
+      )}
+      {errors.map((item) => (
+        <p key={`${item.code}-${item.message}`} className="drw-error-text">
+          {item.code}: {item.message}
+        </p>
+      ))}
+      {preview.warnings.map((item) => (
+        <p key={item} className="si-plan__note">
+          {item}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+function InterpretationPanel({ interpretation }: { interpretation: SIInterpretation }) {
+  const groups: { heading: string; items: string[] }[] = [
+    { heading: "What this establishes", items: interpretation.establishes },
+    { heading: "What it does not establish", items: interpretation.does_not_establish },
+    { heading: "Limitations", items: interpretation.limitations },
+    { heading: "Proposed next steps", items: interpretation.next_steps },
+  ];
+  return (
+    <div className="si-interpretation" data-testid="si-interpretation">
+      <p className="si-plan__heading">Interpretation</p>
+      <p className="si-plan__lead">{interpretation.text}</p>
+      {groups
+        .filter((group) => group.items.length > 0)
+        .map((group) => (
+          <div key={group.heading}>
+            <p className="si-plan__heading">{group.heading}</p>
+            <ul className="si-plan__list">
+              {group.items.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      {Object.keys(interpretation.artifacts).length > 0 ? (
+        <p className="si-plan__note drw-mono">
+          {Object.entries(interpretation.artifacts)
+            .map(([key, value]) => `${key}=${value}`)
+            .join(" · ")}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function PlanPanel({
+  plan,
+  actionById,
+  busy,
+  selectedStepId,
+  onPreview,
+  onExecute,
+  onReject,
+}: {
+  plan: SIPlan;
+  actionById: Map<string, SIActionRef>;
+  busy: boolean;
+  selectedStepId: string | null;
+  onPreview: (stepId: string) => void;
+  onExecute: (stepId: string) => void;
+  onReject: (stepId: string) => void;
+}) {
+  const executedIds = new Set(
+    plan.steps.filter((step) => step.status === "executed").map((step) => step.step_id),
+  );
   return (
     <div className="si-plan" data-testid="si-plan">
       <p className="si-plan__lead">
-        {proposal.rationale || `Here is a configuration for ${modelId} that addresses your question.`}
+        {plan.rationale || "Here is the plan SI proposes for this investigation."}
       </p>
       <dl className="si-plan__facts">
         <div>
-          <dt>Model</dt>
-          <dd>
-            {modelId}
-            {model ? ` · ${model.n_parameters} parameters, ${model.n_outputs} outputs` : ""}
-          </dd>
+          <dt>Plan</dt>
+          <dd className="drw-mono">{plan.plan_id}</dd>
         </div>
         <div>
           <dt>Source</dt>
-          <dd>{proposal.used_ai ? `AI provider (${proposal.provider})` : "Rule-based planner"}</dd>
+          <dd>{plan.used_ai ? "AI provider" : "Rule-based planner"}</dd>
         </div>
         <div>
-          <dt>Validation</dt>
-          <dd>{proposal.validation_ok ? "Passes the engine's checks" : "Needs correction"}</dd>
+          <dt>Steps</dt>
+          <dd>{plan.steps.length}</dd>
         </div>
       </dl>
-      <p className="si-plan__heading">Proposed experiment</p>
-      <ol className="si-plan__steps">
-        {steps.map((step) => (
-          <li key={step}>{step}</li>
-        ))}
-      </ol>
-      {proposal.assumptions.length > 0 ? (
-        <>
-          <p className="si-plan__heading">Assumptions</p>
+      {plan.open_questions.length > 0 ? (
+        <div data-testid="si-plan-questions">
+          <p className="si-plan__heading">Open questions</p>
           <ul className="si-plan__list">
-            {proposal.assumptions.map((item) => (
-              <li key={item}>{item}</li>
+            {plan.open_questions.map((question) => (
+              <li key={question}>{question}</li>
             ))}
           </ul>
-        </>
+        </div>
       ) : null}
-      <div className="si-plan__actions">
-        <Button
-          size="md"
-          data-testid="si-review-in-manual"
-          onClick={() => onReview(spec, modelId)}
-        >
-          Review in Manual
-        </Button>
-        <Button
-          kind="tertiary"
-          size="md"
-          data-testid="si-run"
-          disabled={running || !proposal.validation_ok}
-          onClick={() => onRun(spec, modelId)}
-        >
-          Run
-        </Button>
-        <span className="si-plan__note">
-          Nothing has run yet. Run validates with the engine first, then executes; Review in Manual
-          exposes every setting before you commit.
-        </span>
-      </div>
+      <p className="si-plan__heading">Proposed steps</p>
+      <ol className="si-plan__steps">
+        {plan.steps.map((step) => {
+          const draft = step.status === "proposed" || step.status === "approved";
+          const runnable =
+            draft && step.depends_on.every((id) => executedIds.has(id));
+          return (
+            <StepCard
+              key={step.step_id}
+              step={step}
+              action={actionById.get(step.action_id)}
+              busy={busy}
+              selected={selectedStepId === step.step_id}
+              runnable={runnable}
+              onPreview={() => onPreview(step.step_id)}
+              onExecute={() => onExecute(step.step_id)}
+              onReject={() => onReject(step.step_id)}
+            />
+          );
+        })}
+      </ol>
+      <p className="si-plan__note">
+        Nothing runs without approval. Read-only steps inspect state; every step that creates or
+        changes an artifact shows exactly what it will do and waits for your decision. Steps run in
+        order.
+      </p>
     </div>
   );
 }
@@ -258,16 +453,30 @@ export function InvestigationSi({
   onSuggestionNav: () => void;
 }) {
   const ws = useWorkspace();
-  const { messages, busy } = ws.conversation(investigationId);
   const [draft, setDraft] = useState("");
   const areaRef = useRef<HTMLTextAreaElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
-  const hasThread = messages.length > 0;
   const modelId = ws.schema?.model_id ?? ws.selectedModelId;
+  const siState = ws.siState?.investigation_id === investigationId ? ws.siState : null;
+  const messages = siState?.messages ?? [];
+  const hasThread = messages.length > 0;
+  const actionById = useMemo(
+    () => new Map(ws.siActions.map((action) => [action.action_id, action])),
+    [ws.siActions],
+  );
+  const plan = useMemo(
+    () => siState?.plans.find((item) => item.plan_id === siState.current_plan_id) ?? null,
+    [siState],
+  );
+
+  useEffect(() => {
+    void ws.loadSi(investigationId, modelId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [investigationId, modelId]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView?.({ block: "end" });
-  }, [messages.length, busy]);
+  }, [messages.length, ws.siBusy, plan?.steps.length]);
 
   function pick(item: Suggestion): void {
     if (item.prompt === null) {
@@ -283,10 +492,10 @@ export function InvestigationSi({
       value={draft}
       onChange={setDraft}
       onSubmit={() => {
-        void ws.ask(investigationId, draft.trim(), modelId);
+        void ws.askSi(investigationId, draft.trim(), modelId);
         setDraft("");
       }}
-      busy={busy}
+      busy={ws.siBusy}
       models={ws.models}
       selectedModelId={modelId}
       onSelectModel={ws.setSelectedModelId}
@@ -299,41 +508,43 @@ export function InvestigationSi({
 
   return (
     <div className={hasThread ? "si si--thread" : "si"} data-testid="si-view">
-      {hasThread ? (
+      {hasThread || plan ? (
         <div className="si__scroll">
           <div className="si__column">
             {messages.map((message) =>
               message.role === "user" ? (
-                <div key={message.id} className="si-msg si-msg--user">
+                <div key={message.message_id} className="si-msg si-msg--user">
                   {message.text}
                 </div>
               ) : (
-                <div key={message.id} className="si-msg si-msg--si">
+                <div key={message.message_id} className="si-msg si-msg--si">
                   <span className="si-msg__who">SI</span>
-                  {message.kind === "plan" ? (
-                    <PlanCard
-                      message={message}
-                      model={ws.models.find((m) => m.model_id === message.modelId)}
-                      onReview={(spec, id) => void ws.reviewProposal(spec, id)}
-                      onRun={(spec, id) => void ws.runProposal(spec, id)}
-                      running={busy}
-                    />
+                  {message.analysis ? (
+                    <AnalysisBlock analysis={message.analysis} />
                   ) : (
-                    <div className="si-plan" data-testid="si-error">
-                      <p className="si-plan__lead">{message.text}</p>
-                      {message.questions.length > 0 ? (
-                        <ul className="si-plan__list">
-                          {message.questions.map((q) => (
-                            <li key={q}>{q}</li>
-                          ))}
-                        </ul>
-                      ) : null}
-                    </div>
+                    <p className="si-plan__lead">{message.text}</p>
                   )}
                 </div>
               ),
             )}
-            {busy ? <p className="si-thinking">SI is preparing a proposal...</p> : null}
+
+            {plan ? (
+              <PlanPanel
+                plan={plan}
+                actionById={actionById}
+                busy={ws.siBusy}
+                selectedStepId={ws.siPreviewStepId}
+                onPreview={(stepId) => void ws.previewSiStep(investigationId, stepId, modelId)}
+                onExecute={(stepId) => void ws.executeSiStep(investigationId, stepId, modelId)}
+                onReject={(stepId) => void ws.rejectSiStep(investigationId, stepId)}
+              />
+            ) : null}
+
+            {ws.siPreview ? <PreviewPanel preview={ws.siPreview} /> : null}
+            {ws.siLastInterpretation ? (
+              <InterpretationPanel interpretation={ws.siLastInterpretation} />
+            ) : null}
+            {ws.siBusy ? <p className="si-thinking">SI is working...</p> : null}
             <div ref={endRef} />
           </div>
         </div>
@@ -343,7 +554,9 @@ export function InvestigationSi({
             SI &mdash; Scientific Intelligence
           </p>
           <h1 className="si__title">
-            {investigationId === "draft" ? "What are you investigating?" : "How can I help with this investigation?"}
+            {investigationId === "draft"
+              ? "What are you investigating?"
+              : "How can I help with this investigation?"}
           </h1>
           <p className="si__sub">
             Turns a research question into a proposed, inspectable scientific workflow. Nothing runs
@@ -355,12 +568,16 @@ export function InvestigationSi({
       <div className="si__dock">
         <div className="si__column">
           {composer}
+          {ws.siError ? (
+            <p className="drw-error-text" data-testid="si-error" role="alert">
+              {ws.siError}
+            </p>
+          ) : null}
           {!hasThread ? <Suggestions items={INVESTIGATION_SUGGESTIONS} onPick={pick} /> : null}
           <p className="si__foot">
-            {ws.plannerNote ? ws.plannerNote.note : "Checking planner configuration..."} Today SI
-            proposes experiment configurations and hands them to Manual; analyses (sensitivity,
-            identifiability, calibration) run from the Analysis page. SI proposes; you decide what
-            runs.
+            {ws.siProvider ? ws.siProvider.note : "Checking SI configuration..."} SI proposes and
+            interprets; DRW computes and records. {ws.siActions.length} controlled action(s) are
+            available.
           </p>
         </div>
       </div>

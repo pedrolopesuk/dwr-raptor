@@ -8,7 +8,6 @@ import type {
   ExperimentSummary,
   ModelCapabilities,
   ModelSummary,
-  PlanProposal,
   ValidationResult,
 } from "@/lib/types";
 import {
@@ -18,6 +17,11 @@ import {
   okValidation,
   record,
   sampleSpec,
+  siAnalysis,
+  siExecution,
+  siInterpretation,
+  siPlan,
+  siState,
   stubClient,
   succeededData,
 } from "@/test/stubClient";
@@ -417,90 +421,139 @@ describe("configure and run", () => {
 });
 
 describe("SI", () => {
-  const proposal: PlanProposal = {
-    spec: sampleSpec,
-    assumptions: ["baseline set to nominal"],
-    questions: [],
-    diagnostics: [],
-    validation_ok: true,
-    provider: "rule-based",
-    used_ai: false,
-    rationale: "Proposed varying alpha by 10%.",
-  };
-
-  it("asks from the project overview and continues in the investigation's SI page", async () => {
+  it("asks from the project overview and shows the structured plan in the investigation", async () => {
     const user = userEvent.setup();
-    const planExperiment = vi.fn().mockResolvedValue(proposal);
-    renderApp(stubClient({ planExperiment }));
+    const siAsk = vi.fn().mockResolvedValue({ analysis: siAnalysis(), state: siState() });
+    renderApp(stubClient({ siAsk }));
     await waitFor(() => expect(screen.getByTestId("si-model")).toHaveValue("predator-prey"));
     await user.type(screen.getByTestId("si-input"), "increase alpha by 10%");
     await user.click(screen.getByTestId("si-send"));
 
     await waitFor(() => expect(__getPath()).toBe(`${INV}/draft/si`));
-    expect(await screen.findByTestId("si-plan")).toHaveTextContent("Proposed experiment");
-    expect(planExperiment).toHaveBeenCalledWith("predator-prey", "increase alpha by 10%");
+    expect(await screen.findByTestId("si-plan")).toHaveTextContent("Proposed steps");
+    expect(siAsk).toHaveBeenCalledWith("draft", "increase alpha by 10%", {
+      projectId: "default",
+      modelId: "predator-prey",
+    });
   });
 
-  it("proposes, never runs, and opens the proposal in Manual configuration", async () => {
+  it("marks mutating steps as requiring approval and read-only steps as safe", async () => {
+    renderApp(stubClient(), `${INV}/draft/si`);
+    const plan = await screen.findByTestId("si-plan");
+    expect(within(plan).getByTestId("si-step-step-1")).toHaveTextContent("Read-only");
+    expect(within(plan).getByTestId("si-step-step-2")).toHaveTextContent("Requires approval");
+  });
+
+  it("reviews a step before running and shows exactly what will run", async () => {
     const user = userEvent.setup();
-    const run = vi.fn().mockResolvedValue(succeededData());
-    renderApp(stubClient({ planExperiment: vi.fn().mockResolvedValue(proposal), run }), `${INV}/draft/si`);
-    await waitFor(() => expect(screen.getByTestId("si-model")).toHaveValue("predator-prey"));
-    await user.type(screen.getByTestId("si-input"), "increase alpha by 10%");
-    await user.click(screen.getByTestId("si-send"));
+    renderApp(stubClient(), `${INV}/draft/si`);
     await screen.findByTestId("si-plan");
-
-    await user.click(screen.getByTestId("si-review-in-manual"));
-    await waitFor(() => expect(__getPath()).toBe(`${INV}/draft/experiments/configure`));
-    await waitFor(() => expect(screen.getByLabelText("Hypothesis")).toHaveValue(sampleSpec.hypothesis));
-    expect(screen.getByTestId("status-value")).toHaveTextContent("idle");
-    expect(screen.getByTestId("mode-manual")).toHaveAttribute("aria-selected", "true");
-    expect(run).not.toHaveBeenCalled();
+    await user.click(screen.getByTestId("si-review-step-2"));
+    const preview = await screen.findByTestId("si-preview");
+    expect(preview).toHaveTextContent("creates experiment");
+    expect(screen.getByTestId("si-preview-inputs")).toHaveTextContent("hypothesis");
   });
 
-  it("asks for more information instead of guessing", async () => {
+  it("runs steps in order, requires approval for mutating steps, and shows the interpretation", async () => {
     const user = userEvent.setup();
-    const questions: PlanProposal = {
-      ...proposal,
-      spec: null,
-      questions: ["Which parameter should change?"],
-    };
-    renderApp(stubClient({ planExperiment: vi.fn().mockResolvedValue(questions) }), `${INV}/draft/si`);
-    await waitFor(() => expect(screen.getByTestId("si-model")).toHaveValue("predator-prey"));
-    await user.type(screen.getByTestId("si-input"), "vary it");
-    await user.click(screen.getByTestId("si-send"));
-    expect(await screen.findByTestId("si-questions")).toHaveTextContent("Which parameter should change?");
-    expect(screen.queryByTestId("si-review-in-manual")).toBeNull();
-  });
-
-  it("surfaces unsupported-capability errors from the planner", async () => {
-    const user = userEvent.setup();
-    const planExperiment = vi
+    const base = siPlan();
+    const [firstStep, secondStep] = base.steps;
+    const progressed = siPlan({
+      steps: [
+        {
+          ...firstStep!,
+          status: "executed",
+          execution: siExecution({ step_id: "step-1", action_id: "inspect_investigation" }),
+        },
+        secondStep!,
+      ],
+    });
+    const siExecute = vi
       .fn()
-      .mockRejectedValue(new ApiError("unsupported_capability", "no bounded numeric parameter to vary", []));
-    renderApp(stubClient({ planExperiment }), `${INV}/draft/si`);
-    await waitFor(() => expect(screen.getByTestId("si-model")).toHaveValue("predator-prey"));
-    await user.type(screen.getByTestId("si-input"), "vary the categorical parameter");
-    await user.click(screen.getByTestId("si-send"));
-    expect(await screen.findByTestId("si-error")).toHaveTextContent(/no bounded numeric/);
-    expect(screen.queryByTestId("si-plan")).toBeNull();
-  });
-
-  it("runs a proposal only after the engine validates it", async () => {
-    const user = userEvent.setup();
-    const run = vi.fn().mockResolvedValue(succeededData());
-    const validate = vi.fn().mockResolvedValue(okValidation);
-    renderApp(stubClient({ planExperiment: vi.fn().mockResolvedValue(proposal), run, validate }), `${INV}/draft/si`);
-    await waitFor(() => expect(screen.getByTestId("si-model")).toHaveValue("predator-prey"));
-    await user.type(screen.getByTestId("si-input"), "increase alpha by 10%");
-    await user.click(screen.getByTestId("si-send"));
+      .mockResolvedValueOnce({
+        execution: siExecution({ step_id: "step-1", action_id: "inspect_investigation" }),
+        interpretation: siInterpretation({ step_id: "step-1", action_id: "inspect_investigation" }),
+        state: siState({ plans: [progressed], current_plan_id: progressed.plan_id }),
+      })
+      .mockResolvedValueOnce({
+        execution: siExecution(),
+        interpretation: siInterpretation(),
+        state: siState({ plans: [progressed], current_plan_id: progressed.plan_id }),
+      });
+    renderApp(stubClient({ siExecute }), `${INV}/draft/si`);
     await screen.findByTestId("si-plan");
 
-    // The explicit Run is the approval: it validates with the engine, then runs.
-    await user.click(screen.getByTestId("si-run"));
-    await waitFor(() => expect(validate).toHaveBeenCalledWith(sampleSpec));
-    await waitFor(() => expect(run).toHaveBeenCalled());
-    await waitFor(() => expect(__getPath()).toBe(`${INV}/exp-000000000000/experiments`));
+    // The dependent step is disabled until its dependency has run.
+    expect(screen.getByTestId("si-run-step-2")).toBeDisabled();
+
+    await user.click(screen.getByTestId("si-run-step-1"));
+    await waitFor(() => expect(screen.getByTestId("si-run-step-2")).toBeEnabled());
+
+    await user.click(screen.getByTestId("si-run-step-2"));
+    await waitFor(() => expect(siExecute).toHaveBeenCalledTimes(2));
+    const call = siExecute.mock.calls[1] as [string, string, { approve?: boolean }];
+    expect(call[0]).toBe("draft");
+    expect(call[1]).toBe("step-2");
+    expect(call[2].approve).toBe(true);
+    expect(await screen.findByTestId("si-interpretation")).toHaveTextContent(
+      "What it does not establish",
+    );
+  });
+
+  it("rejects a step without running it", async () => {
+    const user = userEvent.setup();
+    const siReject = vi.fn().mockResolvedValue(siState());
+    renderApp(stubClient({ siReject }), `${INV}/draft/si`);
+    await screen.findByTestId("si-plan");
+    await user.click(screen.getByTestId("si-reject-step-1"));
+    await waitFor(() => expect(siReject).toHaveBeenCalledWith("draft", "step-1"));
+  });
+
+  it("surfaces missing information and unsupported requests", async () => {
+    const user = userEvent.setup();
+    const analysis = siAnalysis({
+      missing_information: ["No observation dataset has been imported."],
+      unsupported_requests: ["Calibration needs an explicit configuration."],
+    });
+    const state = siState({
+      messages: [
+        {
+          message_id: "msg-1",
+          role: "user",
+          text: "calibrate the model",
+          analysis: null,
+          at: "2026-01-01T00:00:00+00:00",
+        },
+        {
+          message_id: "msg-2",
+          role: "si",
+          text: analysis.understanding,
+          analysis,
+          at: "2026-01-01T00:00:01+00:00",
+        },
+      ],
+    });
+    const siAsk = vi.fn().mockResolvedValue({ analysis, state });
+    renderApp(stubClient({ siAsk }), `${INV}/draft/si`);
+    await screen.findByTestId("si-view");
+    await user.type(screen.getByTestId("si-input"), "calibrate the model");
+    await user.click(screen.getByTestId("si-send"));
+    expect(
+      await screen.findByText(/No observation dataset has been imported/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Calibration needs an explicit configuration/)).toBeInTheDocument();
+  });
+
+  it("surfaces an error from the SI bridge", async () => {
+    const user = userEvent.setup();
+    const siAsk = vi
+      .fn()
+      .mockRejectedValue(new ApiError("bad_request", "the provider is down", []));
+    renderApp(stubClient({ siAsk }), `${INV}/draft/si`);
+    await screen.findByTestId("si-view");
+    await user.type(screen.getByTestId("si-input"), "anything at all");
+    await user.click(screen.getByTestId("si-send"));
+    expect(await screen.findByTestId("si-error")).toHaveTextContent(/the provider is down/);
   });
 
   it("toggles between SI and Manual without losing the investigation", async () => {

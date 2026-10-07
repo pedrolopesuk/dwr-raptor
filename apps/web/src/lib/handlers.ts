@@ -19,8 +19,15 @@ const STATUS_BY_CODE: Record<string, number> = {
   invalid_spec: 400,
   validation_error: 400,
   unknown_op: 400,
+  unknown_action: 400,
+  invalid_model_spec: 400,
+  invalid_simulation: 400,
   unsupported_capability: 422,
+  unsupported_action: 422,
   question_too_short: 422,
+  approval_required: 409,
+  dependency_not_satisfied: 409,
+  synthetic_not_empirical: 409,
   not_found: 404,
   cancelled: 499,
   bridge_error: 502,
@@ -108,4 +115,15 @@ export const handlers = {
     dispatch("verify_validation", { validation_id: validationId }),
   checkValidationStaleness: (validationId: string) =>
     dispatch("check_validation_staleness", { validation_id: validationId }),
+  siActions: () => dispatch("si_actions", {}),
+  siState: (investigationId: string, params: Record<string, unknown> = {}) =>
+    dispatch("si_state", { ...params, investigation_id: investigationId }),
+  siAsk: (investigationId: string, question: string, params: Record<string, unknown> = {}) =>
+    dispatch("si_ask", { ...params, investigation_id: investigationId, question }),
+  siPreview: (investigationId: string, stepId: string, params: Record<string, unknown> = {}) =>
+    dispatch("si_preview", { ...params, investigation_id: investigationId, step_id: stepId }),
+  siExecute: (investigationId: string, stepId: string, params: Record<string, unknown> = {}) =>
+    dispatch("si_execute", { ...params, investigation_id: investigationId, step_id: stepId }),
+  siReject: (investigationId: string, stepId: string, params: Record<string, unknown> = {}) =>
+    dispatch("si_reject", { ...params, investigation_id: investigationId, step_id: stepId }),
 };

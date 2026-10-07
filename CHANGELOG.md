@@ -4,6 +4,165 @@ All notable changes to this project are documented in this file. The project
 follows a milestone-oriented changelog; entries record *scientific* behaviour
 changes explicitly (see the spec's AI coding loop, section 12.4).
 
+## [Milestone 14] - Controlled model compilation + simulation
+
+### Added
+
+- **Bounded ODE compiler** (`drw/model_compiler.py`). `compile_model_spec` turns a
+  structured `ModelSpecification` into an executable, content-addressed
+  `CompiledModel` (projected `ModelSchema`, rate equations, state/parameter order,
+  execution window). Expressions are parsed with the standard-library `ast` and
+  walked against a strict whitelist - **never** LLM-authored code - then frozen into
+  closures. Deterministic `compile_hash` (spec hash + compiler id/version + order +
+  rates + window); `model_id = "mdl-" + compile_hash[:12]`.
+- **Supported subset:** `kind="ode"`, state variables only, one rate equation per
+  state (`rate_of`), expressions over states/parameters, `t`, `pi`/`e`, `+ - * / **`,
+  unary `+/-` and a fixed list of math functions. **Fails closed** for other model
+  kinds, `derived` variables, non-rate relationships, missing/duplicate rate
+  equations, unsupported expression constructs and invalid execution config, with
+  stable codes and structured diagnostics. Nothing is approximated.
+- **`ModelStore`** (`drw/model_store.py`): content-addressed, append-only, verifiable
+  `<workspace>/models/<model_id>/{spec,schema,artifact,provenance,manifest}.json`;
+  the artifact holds validated expression **strings** (no code); load recomputes and
+  checks the identity.
+- **Registry integration.** `drw.models.registry` now merges built-in and compiled
+  models: `build_model` / `model_schemas` / `list_models` resolve a compiled model by
+  id from the workspace store (a built-in id always wins); the Runner's
+  `_resolve_isolation` uses `is_registered`, so compiled models keep subprocess
+  isolation and the isolated worker builds them from the store.
+- **Simulation** (`drw/simulation.py`, `drw/simulation_store.py`). `simulate` builds a
+  single deterministic run from a `SimulationSpec`, executes it through the existing
+  `Runner`, and turns the run's time-series outputs into a content-addressed dataset
+  whose provenance is `source_kind="synthetic"` (`synthetic_provenance`), recording
+  the model id/hash, parameters, scenario, seed and simulation hash. `prepare_simulation`
+  / `validate_simulation` validate without executing (model resolvable, hash match,
+  window match, parameters present/in bounds, outputs time-series). `SimulationStore`
+  persists `SimulationResult`; identical requests are idempotent. `SimulationResult`
+  gained an optional `dataset_ref`; `synthetic_provenance` gained scenario/simulation
+  hash/preprocessing.
+- **SI actions now real.** `create_model` and `simulate` are executable (still
+  approval-gated with preview validators and dependency ordering); the interpretation
+  layer states a simulation is a consequence of a model, never evidence about the
+  world. `ModelSpecification` relationships gained an optional `rate_of`; the
+  rule-based planner honestly reports that it does not invent model specifications /
+  simulation configurations, and the LLM prompt documents the structured inputs.
+  `SIInvestigationState` gained `simulations`; investigation context/state sync the
+  created models and simulations.
+- **Empirical boundary preserved.** `assert_empirical` still fails closed: a synthetic
+  dataset is refused by evaluation, calibration and validation.
+- Tests: compiler (valid/invalid/unsupported constructs, identity determinism, schema
+  projection, execution vs analytic), model store (round trip/verify/corruption),
+  simulation (Runner integration, determinism, fail-closed validation, empirical
+  guards, scalar-output refusal), SI actions (approval, execution, dependency order,
+  provider cannot bypass), and a full bridge workflow (create_model → simulate →
+  synthetic dataset → state). Existing M13 staged-behaviour tests updated.
+
+### Notes
+
+- **Bounded by design** and honestly reported. The compiler supports only the ODE
+  subset the engine can safely execute; algebraic/discrete models, derived variables
+  and arbitrary expression forms are **not** supported and fail closed.
+- The compiler bakes the integration window into the model, so a simulation must use
+  the same window (`simulation_window_mismatch` otherwise); `default_simulation_config`
+  reads it. Scalar outputs are excluded from the synthetic dataset.
+- A synthetic dataset's artifact identity includes its creation timestamp (DRW's
+  `content_hash` vs `science_hash` model); pass `generated_at` or rely on the SI
+  action's store-level idempotency for a reproducible artifact.
+- **Unmodified**: `ExperimentSpec`, `ModelSchema`, `OdeModel`, `Runner`, the M11
+  observation/dataset contracts, M12A/B/C and the evidence format. Zero new
+  dependencies. Reference: ADR-0029.
+
+## [Milestone 13] - Scientific Intelligence (SI)
+
+### Added
+
+- **Scientific Intelligence orchestration layer** (`drw/si/`, `drw/schema/si.py`).
+  SI turns a natural-language research question into a structured, inspectable plan
+  and drives existing DRW capabilities through a controlled action registry. It
+  never executes code, never bypasses approval and never fabricates results. It is
+  **not** a generic chatbot: SI proposes and interprets; DRW computes and records.
+  Reuses (does not modify) `ExperimentSpec`, `ModelSchema`, `Runner`, M10/M11/M12.
+- **Structured SI contracts.** `SIAnalysis` (understanding / state summary / known
+  / missing information / unsupported requests / caveats / plan), `SIPlan` +
+  `SIPlanStep` (action id, deterministic inputs, purpose, expected output,
+  scientific rationale, dependencies, approval and execution state), `SIMessage`,
+  `SIActionRef`, `SIActionPreview`, `SIExecutionResult`, `SIInterpretation`, and the
+  durable `SIInvestigationState`. A plan is structured state, not prose.
+- **Controlled action registry** (`drw/si/actions.py`). Stable ids with category,
+  read-only flag, approval requirement, declared effect and an executor bound to a
+  real capability: read actions (`inspect_project`, `inspect_investigation`,
+  `list/inspect_model`, `list/inspect_dataset(s)`, `list/inspect_experiment`,
+  `inspect_evidence`, `list/inspect_calibration(s)`, `list/inspect_validation(s)`,
+  `inspect_capabilities`, `inspect_model_spec`), scientific actions
+  (`create_experiment`, `evaluate`, `calibrate`, `validate`, `sensitivity`,
+  `identifiability`) and model/simulation actions (`propose_model`,
+  `validate_model_spec`, `create_model_spec`, `propose_simulation`; `create_model`
+  and `simulate` declared but **unsupported**). No action offers arbitrary
+  execution.
+- **Approval enforcement** (`drw/si/executor.py`). Read-only actions run without
+  approval; every action that creates or modifies an artifact requires the step to
+  be explicitly approved and its dependencies to have executed. Failures and
+  unsupported actions are captured as structured results, never raised as
+  fabrications.
+- **Deterministic interpretation** (`drw/si/interpreter.py`). Every interpretation
+  separates what a result *establishes* from what it *does not* (a fit is never
+  truth; a local study is not global; agreement is not causality).
+- **Deliberate context layer** (`drw/si/context.py`). Compact structured summaries
+  and references (project, investigation state, model capabilities, dataset source
+  kinds and a synthetic flag), never a raw dump of results or simulation data.
+- **Provider abstraction + deterministic fallback** (`drw/si/provider.py`,
+  `drw/si/planner.py`). Rule-based planner by default (no key, no network) that
+  reuses `drw.planner` to build a real spec for design questions; optional
+  OpenAI-compatible provider via the same server-side `DRW_LLM_*` environment.
+  Every AI field is re-validated against the registry and state; unknown actions,
+  unsupported actions, invalid inputs and malformed output are dropped with a
+  recorded caveat and the rule-based plan is used.
+- **Durable investigation memory** (`drw/si/store.py`). `SIInvestigationState` at
+  `si/<investigation_id>.json` with validated ids and path containment; the
+  conversation is an interface to this state, not the source of truth.
+- **Model-generation extension point** (`drw/schema/model_spec.py`,
+  `drw/model_spec_store.py`). A `ModelSpecification` is declarative and inspectable
+  (variables, parameters, units, symbolic relationships, assumptions,
+  initial/boundary conditions, domain, provenance, content identity);
+  `validate_model_specification` and `specification_to_schema` project it onto the
+  engine's `ModelSchema`. Compilation is **staged** (`compilation_supported()`);
+  `create_model` fails closed. Content-addressed, verifiable `ModelSpecStore`.
+- **Simulation and synthetic-vs-real separation** (`drw/schema/simulation.py`).
+  Reproducible `SimulationSpec` (source model + hash, parameters, scenario,
+  initial/boundary conditions, config, outputs) and `SimulationResult` (synthetic by
+  construction); `synthetic_provenance` marks generated data (`source_kind=
+  "synthetic"`) and `assert_empirical` **fails closed** if synthetic data is used
+  for evaluation / calibration / validation. The generate-a-dataset pipeline is
+  staged (`simulation_supported()`); `simulate` fails closed meanwhile.
+- **Interfaces.** Bridge ops `si_state`, `si_ask`, `si_preview`, `si_execute`,
+  `si_reject`, `si_actions`, `si_provider`; CLI `drw si actions|state|ask|preview|
+  execute`; a rebuilt web **SI** page (conversation, structured plan, per-step
+  access class, action preview, approval controls, execution status, interpretation,
+  open questions) plus `/api/si/**` routes, client methods and a browser e2e
+  scenario. Manual remains the direct control layer over the same state.
+- Tests: SI contracts, registry/approval/read-only, context and synthetic/real
+  separation, planner (rule-based + fake provider: unknown/unsupported/invalid/
+  malformed fields), executor (approval, dependencies, unsupported, failures),
+  store, interpreter, model-specification validation + store, simulation
+  provenance, and a full bridge workflow (ask -> plan -> preview -> approve ->
+  execute a real experiment -> interpret -> durable state) including refusal of
+  synthetic evidence, approval enforcement and no arbitrary execution; web
+  component tests and a Playwright scenario.
+
+### Notes
+
+- **SI orchestrates; it does not replace deterministic science.** Evaluation,
+  calibration, validation, sensitivity and identifiability keep their existing
+  semantics and contracts; SI only calls them behind approval.
+- **Staged, honestly reported:** model compilation and the simulate-to-dataset
+  pipeline are *not* implemented - their schemas, identity and provenance exist and
+  the actions fail closed with an explanation.
+- **Unmodified**: `ExperimentSpec`, `ModelSchema`, `Runner`, `RunRecord`/
+  `ModelResult`/`OutputValue`, `EvidenceManifest`, M11 dataset/observation
+  contracts, M12A evaluation, M12B calibration, M12C validation, and M10
+  identifiability. Zero new dependencies.
+- Reference: ADR-0028; guide: `docs/ai/scientific-intelligence.md`.
+
 ## [Milestone 12C] - Validation / generalisation
 
 ### Added

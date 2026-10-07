@@ -1075,3 +1075,181 @@ export interface ValidationStaleness {
   reasons: string[];
   checks: { name: string; status: string; message: string }[];
 }
+
+/** Scientific Intelligence (SI): structured plan / approval / execution contracts. */
+export type SIActionCategory = "read" | "scientific" | "model" | "simulation";
+
+export type SIStatus =
+  | "proposed"
+  | "approved"
+  | "rejected"
+  | "executed"
+  | "failed"
+  | "skipped"
+  | "unsupported";
+
+export type SIApprovalState = "not_required" | "required" | "approved" | "rejected";
+
+export type SIEffect =
+  | "none"
+  | "creates_experiment"
+  | "creates_calibration"
+  | "creates_validation"
+  | "creates_analysis"
+  | "creates_dataset"
+  | "creates_model_spec"
+  | "modifies_model";
+
+export interface SIActionRef {
+  action_id: string;
+  name: string;
+  description: string;
+  category: SIActionCategory;
+  read_only: boolean;
+  requires_approval: boolean;
+  supported: boolean;
+  effects: SIEffect;
+  limitations: string[];
+}
+
+export interface SIActionPreview {
+  action_id: string;
+  name: string;
+  description: string;
+  read_only: boolean;
+  requires_approval: boolean;
+  supported: boolean;
+  effects: SIEffect;
+  inputs: Record<string, unknown>;
+  input_diagnostics: Diagnostic[];
+  summary: string;
+  warnings: string[];
+}
+
+export interface SIExecutionResult {
+  step_id: string;
+  action_id: string;
+  status: SIStatus;
+  ok: boolean;
+  summary: string;
+  result: Record<string, unknown>;
+  artifacts: Record<string, string>;
+  diagnostics: Diagnostic[];
+  error_code: string | null;
+  error_message: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+}
+
+export interface SIPlanStep {
+  step_id: string;
+  purpose: string;
+  action_id: string;
+  inputs: Record<string, unknown>;
+  expected_output: string;
+  scientific_rationale: string;
+  depends_on: string[];
+  approval: SIApprovalState;
+  status: SIStatus;
+  execution: SIExecutionResult | null;
+}
+
+export interface SIPlan {
+  plan_id: string;
+  objective: string;
+  steps: SIPlanStep[];
+  rationale: string;
+  assumptions: string[];
+  open_questions: string[];
+  provider: string;
+  used_ai: boolean;
+  notes: string;
+}
+
+export interface SIAnalysis {
+  schema_version: string;
+  question: string;
+  understanding: string;
+  state_summary: string[];
+  known: string[];
+  missing_information: string[];
+  unsupported_requests: string[];
+  caveats: string[];
+  plan: SIPlan | null;
+  provider: string;
+  used_ai: boolean;
+  diagnostics: Diagnostic[];
+}
+
+export interface SIMessage {
+  message_id: string;
+  role: "user" | "si";
+  text: string;
+  analysis: SIAnalysis | null;
+  at: string;
+}
+
+export interface SIInterpretation {
+  interpretation_id: string;
+  step_id: string;
+  action_id: string;
+  text: string;
+  establishes: string[];
+  does_not_establish: string[];
+  limitations: string[];
+  next_steps: string[];
+  artifacts: Record<string, string>;
+  at: string;
+}
+
+export interface SIInvestigationState {
+  schema_version: string;
+  investigation_id: string;
+  project_id: string | null;
+  objective: string;
+  hypotheses: string[];
+  assumptions: string[];
+  models: string[];
+  datasets: string[];
+  experiments: string[];
+  calibrations: string[];
+  validations: string[];
+  evidence: string[];
+  unresolved_questions: string[];
+  decisions: string[];
+  messages: SIMessage[];
+  plans: SIPlan[];
+  executions: SIExecutionResult[];
+  interpretations: SIInterpretation[];
+  current_plan_id: string | null;
+  current_next_step: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SIProviderStatus {
+  llm_configured: boolean;
+  provider: string;
+  note: string;
+}
+
+export interface SIActionsResponse {
+  actions: SIActionRef[];
+  provider: SIProviderStatus;
+}
+
+export interface SIStateResponse {
+  state: SIInvestigationState;
+  next_step_preview?: SIActionPreview | null;
+}
+
+export interface SIAskResponse {
+  analysis: SIAnalysis;
+  state: SIInvestigationState;
+}
+
+export interface SIExecuteResponse {
+  execution: SIExecutionResult;
+  interpretation: SIInterpretation;
+  state: SIInvestigationState;
+}

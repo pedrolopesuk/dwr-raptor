@@ -31,7 +31,7 @@ export function ProjectOverviewView() {
   function ask(): void {
     const question = draft.trim();
     if (!question || !ws.selectedModelId) return;
-    void ws.ask(DRAFT_ID, question, ws.selectedModelId);
+    void ws.askSi(DRAFT_ID, question, ws.selectedModelId);
     setDraft("");
     router.push(paths.investigation(ws.projectId, DRAFT_ID, "si"));
   }

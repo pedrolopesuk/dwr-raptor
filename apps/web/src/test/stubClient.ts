@@ -27,6 +27,14 @@ import type {
   Project,
   ReproduceReport,
   RunRecord,
+  SIActionPreview,
+  SIActionRef,
+  SIAnalysis,
+  SIExecutionResult,
+  SIInterpretation,
+  SIInvestigationState,
+  SIPlan,
+  SIProviderStatus,
   SobolReport,
   UncertaintySummary,
   ValidationDatasetOutcome,
@@ -845,6 +853,16 @@ export function stubClient(overrides: Partial<DrwClient> = {}): DrwClient {
       provider: "rule-based",
       note: "No LLM provider is configured; the deterministic rule-based planner is used.",
     }),
+    siActions: vi.fn().mockResolvedValue({ actions: siActionRefs, provider: siProvider }),
+    siState: vi.fn().mockResolvedValue({ state: siState(), next_step_preview: siPreview() }),
+    siAsk: vi.fn().mockResolvedValue({ analysis: siAnalysis(), state: siState() }),
+    siPreview: vi.fn().mockResolvedValue(siPreview()),
+    siExecute: vi.fn().mockResolvedValue({
+      execution: siExecution(),
+      interpretation: siInterpretation(),
+      state: siState(),
+    }),
+    siReject: vi.fn().mockResolvedValue(siState()),
     environment: vi.fn().mockResolvedValue({ environment: { python_version: "3.14.6" }, environment_hash: "env" }),
     listDatasetSources: vi.fn().mockResolvedValue([{ filename: "lightcurve.csv", size_bytes: 120 }]),
     inspectDataset: vi.fn().mockResolvedValue(csvInspection()),
@@ -875,4 +893,199 @@ export function stubClient(overrides: Partial<DrwClient> = {}): DrwClient {
     }),
   };
   return { ...base, ...overrides };
+}
+
+export const siProvider: SIProviderStatus = {
+  llm_configured: false,
+  provider: "rule-based",
+  note: "No LLM provider is configured; the deterministic rule-based SI planner is used.",
+};
+
+export const siActionRefs: SIActionRef[] = [
+  {
+    action_id: "inspect_investigation",
+    name: "Inspect investigation",
+    description: "Summarize the durable SI state.",
+    category: "read",
+    read_only: true,
+    requires_approval: false,
+    supported: true,
+    effects: "none",
+    limitations: [],
+  },
+  {
+    action_id: "create_experiment",
+    name: "Create experiment",
+    description: "Validate and run an experiment.",
+    category: "scientific",
+    read_only: false,
+    requires_approval: true,
+    supported: true,
+    effects: "creates_experiment",
+    limitations: [],
+  },
+  {
+    action_id: "simulate",
+    name: "Simulate observations",
+    description: "Run a model and store its output as a synthetic dataset.",
+    category: "simulation",
+    read_only: false,
+    requires_approval: true,
+    supported: true,
+    effects: "creates_dataset",
+    limitations: [],
+  },
+];
+
+export function siPlan(overrides: Partial<SIPlan> = {}): SIPlan {
+  return {
+    plan_id: "plan-abc123abc123",
+    objective: "increase alpha by 10%",
+    steps: [
+      {
+        step_id: "step-1",
+        purpose: "Inspect the durable state of this investigation.",
+        action_id: "inspect_investigation",
+        inputs: {},
+        expected_output: "state summary",
+        scientific_rationale: "Establish what exists.",
+        depends_on: [],
+        approval: "not_required",
+        status: "proposed",
+        execution: null,
+      },
+      {
+        step_id: "step-2",
+        purpose: "Run an experiment that varies alpha and compares outputs.",
+        action_id: "create_experiment",
+        inputs: { spec: sampleSpec },
+        expected_output: "a stored experiment",
+        scientific_rationale: "Observe the modelled response.",
+        depends_on: ["step-1"],
+        approval: "required",
+        status: "proposed",
+        execution: null,
+      },
+    ],
+    rationale: "Proposed 2 steps.",
+    assumptions: [],
+    open_questions: [],
+    provider: "rule-based",
+    used_ai: false,
+    notes: "",
+    ...overrides,
+  };
+}
+
+export function siAnalysis(overrides: Partial<SIAnalysis> = {}): SIAnalysis {
+  return {
+    schema_version: "1.0.0",
+    question: "increase alpha by 10%",
+    understanding: "You are asking: increase alpha by 10%.",
+    state_summary: ["Selected model predator-prey v1.0.0."],
+    known: [],
+    missing_information: ["No observation dataset has been imported."],
+    unsupported_requests: [],
+    caveats: ["SI proposes and interprets; DRW computes and records."],
+    plan: siPlan(),
+    provider: "rule-based",
+    used_ai: false,
+    diagnostics: [],
+    ...overrides,
+  };
+}
+
+export function siState(overrides: Partial<SIInvestigationState> = {}): SIInvestigationState {
+  const plan = siPlan();
+  return {
+    schema_version: "1.0.0",
+    investigation_id: "draft",
+    project_id: "default",
+    objective: "increase alpha by 10%",
+    hypotheses: [],
+    assumptions: [],
+    models: ["predator-prey"],
+    datasets: [],
+    experiments: [],
+    calibrations: [],
+    validations: [],
+    evidence: [],
+    unresolved_questions: [],
+    decisions: [],
+    messages: [
+      {
+        message_id: "msg-1",
+        role: "user",
+        text: "increase alpha by 10%",
+        analysis: null,
+        at: "2026-01-01T00:00:00+00:00",
+      },
+      {
+        message_id: "msg-2",
+        role: "si",
+        text: "You are asking: increase alpha by 10%.",
+        analysis: siAnalysis({ plan }),
+        at: "2026-01-01T00:00:01+00:00",
+      },
+    ],
+    plans: [plan],
+    executions: [],
+    interpretations: [],
+    current_plan_id: plan.plan_id,
+    current_next_step: "step-1",
+    created_at: "2026-01-01T00:00:00+00:00",
+    updated_at: "2026-01-01T00:00:01+00:00",
+    ...overrides,
+  };
+}
+
+export function siPreview(overrides: Partial<SIActionPreview> = {}): SIActionPreview {
+  return {
+    action_id: "create_experiment",
+    name: "Create experiment",
+    description: "Validate and run an experiment.",
+    read_only: false,
+    requires_approval: true,
+    supported: true,
+    effects: "creates_experiment",
+    inputs: { spec: sampleSpec },
+    input_diagnostics: [],
+    summary: "Create experiment: will creates experiment. Requires your approval.",
+    warnings: [],
+    ...overrides,
+  };
+}
+
+export function siExecution(overrides: Partial<SIExecutionResult> = {}): SIExecutionResult {
+  return {
+    step_id: "step-2",
+    action_id: "create_experiment",
+    status: "executed",
+    ok: true,
+    summary: "Ran experiment exp-000000000000: 2/2 runs succeeded.",
+    result: {},
+    artifacts: { experiment_id: "exp-000000000000" },
+    diagnostics: [],
+    error_code: null,
+    error_message: null,
+    started_at: null,
+    finished_at: null,
+    ...overrides,
+  };
+}
+
+export function siInterpretation(overrides: Partial<SIInterpretation> = {}): SIInterpretation {
+  return {
+    interpretation_id: "interp-step-2",
+    step_id: "step-2",
+    action_id: "create_experiment",
+    text: "The model ran for the configured baseline and interventions.",
+    establishes: ["The model produced the reported outputs."],
+    does_not_establish: ["That the model is correct, or matches reality."],
+    limitations: ["Every output is conditioned on the model."],
+    next_steps: ["Evaluate the model against empirical observations."],
+    artifacts: { experiment_id: "exp-000000000000" },
+    at: "2026-01-01T00:00:02+00:00",
+    ...overrides,
+  };
 }

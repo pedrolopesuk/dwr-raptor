@@ -23,7 +23,9 @@ Operations: ``list_models``, ``describe_model``, ``capabilities``,
 ``list_calibrations``, ``get_calibration``, ``verify_calibration``,
 ``run_validation``, ``list_validations``, ``get_validation``,
 ``verify_validation``, ``check_validation_staleness``, ``list_projects``,
-``create_project``, ``plan_experiment``, ``planner_status``, ``environment``.
+``create_project``, ``plan_experiment``, ``planner_status``, ``si_state``,
+``si_ask``, ``si_preview``, ``si_execute``, ``si_reject``, ``si_actions``,
+``si_provider``, ``environment``.
 
 The workspace root comes from ``DRW_WORKSPACE``. The bridge executes only
 registered models; it exposes no network service and runs no arbitrary
@@ -46,7 +48,11 @@ from drw.execution.runner import ExperimentValidationError, Runner
 from drw.jobs import InvalidJobId, JobJournal, derive_phase
 from drw.models.registry import build_model, model_schemas
 from drw.planner import PlannerError, plan_experiment, provider_status
-from drw.schema.experiment import ExperimentSpec, estimate_run_count, validate_experiment
+from drw.schema.experiment import (
+    ExperimentSpec,
+    estimate_run_count,
+    validate_experiment,
+)
 from drw.schema.serialization import dumps_pretty, to_plain
 from drw.sensitivity import oat_sensitivity, primary_output
 from drw.store import (
@@ -248,7 +254,9 @@ def op_job_status(params: Params, store: ExperimentStore) -> dict[str, Any]:
 
 def op_list_experiments(params: Params, store: ExperimentStore) -> dict[str, Any]:
     project_id = params.get("project_id")
-    return {"experiments": store.list(project_id=str(project_id) if project_id else None)}
+    return {
+        "experiments": store.list(project_id=str(project_id) if project_id else None)
+    }
 
 
 def op_get_experiment(params: Params, store: ExperimentStore) -> dict[str, Any]:
@@ -274,7 +282,9 @@ def op_verify_evidence(params: Params, store: ExperimentStore) -> dict[str, Any]
     experiment_id = _param_str(params, "experiment_id")
     manifest = store.experiment_dir(experiment_id) / "evidence" / "manifest.json"
     if not manifest.is_file():
-        raise ApiError("not_found", f"experiment {experiment_id!r} has no evidence package")
+        raise ApiError(
+            "not_found", f"experiment {experiment_id!r} has no evidence package"
+        )
     try:
         report = verify_evidence(manifest)
     except EvidenceVerificationError as exc:
@@ -321,7 +331,8 @@ def op_global_sensitivity(params: Params, store: ExperimentStore) -> dict[str, A
     output = params.get("output") or None
     factors = params.get("factors") or None
     if factors is not None and (
-        not isinstance(factors, list) or not all(isinstance(item, str) for item in factors)
+        not isinstance(factors, list)
+        or not all(isinstance(item, str) for item in factors)
     ):
         raise ApiError("bad_request", "'factors' must be a list of parameter names")
     try:
@@ -329,7 +340,9 @@ def op_global_sensitivity(params: Params, store: ExperimentStore) -> dict[str, A
         seed = int(params.get("seed", 0))
         bootstrap = int(params.get("bootstrap_resamples", DEFAULT_BOOTSTRAP))
     except (TypeError, ValueError) as exc:
-        raise ApiError("bad_request", f"invalid numeric study parameter: {exc}") from exc
+        raise ApiError(
+            "bad_request", f"invalid numeric study parameter: {exc}"
+        ) from exc
 
     # Resolve the study size for the job journal (reuses the core's canonical
     # factor-selection rule so the reported total matches what will run).
@@ -389,16 +402,21 @@ def op_identifiability(params: Params, store: ExperimentStore) -> dict[str, Any]
     outputs = params.get("outputs") or None
     for key, value in (("factors", factors), ("outputs", outputs)):
         if value is not None and (
-            not isinstance(value, list) or not all(isinstance(item, str) for item in value)
+            not isinstance(value, list)
+            or not all(isinstance(item, str) for item in value)
         ):
             raise ApiError("bad_request", f"{key!r} must be a list of names")
     try:
         step_scale = float(params.get("step_scale", DEFAULT_STEP_SCALE))
         seed = int(params.get("seed", 0))
         rank_tolerance = float(params.get("rank_tolerance", DEFAULT_RANK_TOLERANCE))
-        condition_threshold = float(params.get("condition_threshold", CONDITION_THRESHOLD))
+        condition_threshold = float(
+            params.get("condition_threshold", CONDITION_THRESHOLD)
+        )
     except (TypeError, ValueError) as exc:
-        raise ApiError("bad_request", f"invalid numeric study parameter: {exc}") from exc
+        raise ApiError(
+            "bad_request", f"invalid numeric study parameter: {exc}"
+        ) from exc
 
     # Resolve the study size for the job journal (reuses the core's canonical
     # factor-selection rule so the reported total matches what will run).
@@ -450,7 +468,8 @@ def _dataset_source_path(store: ExperimentStore, filename: str) -> Path:
     relative = Path(filename)
     if relative.is_absolute() or ".." in relative.parts:
         raise ApiError(
-            "bad_request", "filename must be a relative path inside the dataset-sources directory"
+            "bad_request",
+            "filename must be a relative path inside the dataset-sources directory",
         )
     sources = (Path(store.root) / "dataset-sources").resolve()
     candidate = (sources / relative).resolve()
@@ -482,11 +501,16 @@ def op_inspect_dataset(params: Params, store: ExperimentStore) -> dict[str, Any]
     if has_header is not None and not isinstance(has_header, bool):
         raise ApiError("bad_request", "'has_header' must be a boolean when supplied")
     missing = params.get("missing_codes") or []
-    if not isinstance(missing, list) or not all(isinstance(item, str) for item in missing):
+    if not isinstance(missing, list) or not all(
+        isinstance(item, str) for item in missing
+    ):
         raise ApiError("bad_request", "'missing_codes' must be a list of strings")
     try:
         inspection = CSV_ADAPTER.inspect(
-            path, delimiter=delimiter, has_header=has_header, missing_codes=tuple(missing)
+            path,
+            delimiter=delimiter,
+            has_header=has_header,
+            missing_codes=tuple(missing),
         )
     except InspectionError as exc:
         raise ApiError("bad_request", str(exc)) from exc
@@ -507,7 +531,9 @@ def op_import_dataset(params: Params, store: ExperimentStore) -> dict[str, Any]:
         config = CsvImportConfig.model_validate(config_raw)
     except PydanticValidationError as exc:
         raise ApiError(
-            "bad_request", "the import configuration is not well formed", diagnostics=exc.errors()
+            "bad_request",
+            "the import configuration is not well formed",
+            diagnostics=exc.errors(),
         ) from exc
     dry_run = bool(params.get("dry_run", False))
     datasets = DatasetStore(store.root)
@@ -547,7 +573,9 @@ def op_describe_dataset(params: Params, store: ExperimentStore) -> dict[str, Any
 
     dataset_id = _param_str(params, "dataset_id")
     datasets = DatasetStore(store.root)
-    dataset = datasets.load(dataset_id)  # KeyError -> not_found; ValueError -> bad_request
+    dataset = datasets.load(
+        dataset_id
+    )  # KeyError -> not_found; ValueError -> bad_request
     return {
         "ref": to_plain(datasets.ref(dataset_id)),
         "dataset": to_plain(dataset),
@@ -575,12 +603,16 @@ def op_evaluate(params: Params, store: ExperimentStore) -> dict[str, Any]:
     try:
         mapping = ObservationMapping.model_validate(_require(params, "mapping"))
     except PydanticValidationError as exc:
-        raise ApiError("bad_request", "the mapping is not well formed", diagnostics=exc.errors()) from exc
+        raise ApiError(
+            "bad_request", "the mapping is not well formed", diagnostics=exc.errors()
+        ) from exc
     try:
         config = EvaluationConfig.model_validate(params.get("config") or {})
     except PydanticValidationError as exc:
         raise ApiError(
-            "bad_request", "the evaluation config is not well formed", diagnostics=exc.errors()
+            "bad_request",
+            "the evaluation config is not well formed",
+            diagnostics=exc.errors(),
         ) from exc
 
     loaded = store.load(experiment_id)  # KeyError -> not found
@@ -593,9 +625,13 @@ def op_evaluate(params: Params, store: ExperimentStore) -> dict[str, Any]:
     if run_id == "baseline":
         run = runs[0]
     else:
-        run = next((candidate for candidate in runs if candidate.run_id == run_id), None)
+        run = next(
+            (candidate for candidate in runs if candidate.run_id == run_id), None
+        )
         if run is None:
-            raise ApiError("bad_request", f"experiment {experiment_id!r} has no run {run_id!r}")
+            raise ApiError(
+                "bad_request", f"experiment {experiment_id!r} has no run {run_id!r}"
+            )
     dataset = DatasetStore(store.root).load(mapping.dataset.dataset_id)
     result = evaluate_run(
         run,
@@ -621,7 +657,9 @@ def op_calibrate(params: Params, store: ExperimentStore) -> dict[str, Any]:
         config = CalibrationConfig.model_validate(_require(params, "config"))
     except PydanticValidationError as exc:
         raise ApiError(
-            "bad_request", "the calibration config is not well formed", diagnostics=exc.errors()
+            "bad_request",
+            "the calibration config is not well formed",
+            diagnostics=exc.errors(),
         ) from exc
     # The request experiment id is authoritative.
     config = config.model_copy(update={"experiment_id": experiment_id})
@@ -635,7 +673,9 @@ def op_calibrate(params: Params, store: ExperimentStore) -> dict[str, Any]:
             raise ApiError("bad_request", str(exc)) from exc
         journal.prune()
         journal.append(
-            "started", total_runs=config.budget.max_evaluations, experiment_id=experiment_id
+            "started",
+            total_runs=config.budget.max_evaluations,
+            experiment_id=experiment_id,
         )
 
     result = calibrate_for_experiment(experiment_id, store, config, journal=journal)
@@ -685,7 +725,9 @@ def op_run_validation(params: Params, store: ExperimentStore) -> dict[str, Any]:
         config = ValidationConfig.model_validate(_require(params, "config"))
     except PydanticValidationError as exc:
         raise ApiError(
-            "bad_request", "the validation config is not well formed", diagnostics=exc.errors()
+            "bad_request",
+            "the validation config is not well formed",
+            diagnostics=exc.errors(),
         ) from exc
     # The request experiment id is authoritative.
     config = config.model_copy(update={"experiment_id": experiment_id})
@@ -699,7 +741,9 @@ def op_run_validation(params: Params, store: ExperimentStore) -> dict[str, Any]:
             raise ApiError("bad_request", str(exc)) from exc
         journal.prune()
         journal.append(
-            "started", total_runs=config.budget.max_evaluations, experiment_id=experiment_id
+            "started",
+            total_runs=config.budget.max_evaluations,
+            experiment_id=experiment_id,
         )
 
     result = validate_for_experiment(experiment_id, store, config)
@@ -740,7 +784,9 @@ def op_verify_validation(params: Params, store: ExperimentStore) -> dict[str, An
     return {"verification": to_plain(report)}
 
 
-def op_check_validation_staleness(params: Params, store: ExperimentStore) -> dict[str, Any]:
+def op_check_validation_staleness(
+    params: Params, store: ExperimentStore
+) -> dict[str, Any]:
     from drw.calibration_store import CalibrationStore
     from drw.dataset_store import DatasetStore
     from drw.validation_store import ValidationStore, check_validation_staleness
@@ -796,7 +842,9 @@ def op_plan_experiment(params: Params, _store: ExperimentStore) -> dict[str, Any
         )
     except PlannerError as exc:
         raise ApiError(
-            exc.code, exc.message, diagnostics=[{"code": exc.code, "questions": exc.questions}]
+            exc.code,
+            exc.message,
+            diagnostics=[{"code": exc.code, "questions": exc.questions}],
         ) from exc
     return {
         "spec": to_plain(plan.spec) if plan.spec is not None else None,
@@ -814,9 +862,162 @@ def op_planner_status(_params: Params, _store: ExperimentStore) -> dict[str, Any
     return provider_status()
 
 
+# ---------------------------------------------------------------------------
+# Scientific Intelligence (SI) operations
+# ---------------------------------------------------------------------------
+
+
+def _si_guard(exc: Exception) -> ApiError:
+    from drw.si.actions import SIActionError
+
+    if isinstance(exc, SIActionError):
+        return ApiError(exc.code, exc.message, diagnostics=exc.diagnostics)
+    raise exc
+
+
+def _si_scope(params: Params) -> tuple[str, str | None]:
+    project_id = str(params.get("project_id") or DEFAULT_PROJECT_ID)
+    model_id = params.get("model_id")
+    return project_id, (str(model_id) if model_id else None)
+
+
+def op_si_state(params: Params, store: ExperimentStore) -> dict[str, Any]:
+    from drw.si import get_state
+
+    investigation_id = _param_str(params, "investigation_id")
+    project_id, model_id = _si_scope(params)
+    try:
+        state = get_state(store, investigation_id, project_id=project_id)
+    except Exception as exc:
+        raise _si_guard(exc) from exc
+    data: dict[str, Any] = {"state": to_plain(state)}
+    if model_id is not None:
+        from drw.si.context import build_action_context
+
+        ctx = build_action_context(
+            store,
+            investigation_id=investigation_id,
+            project_id=project_id,
+            model_id=model_id,
+            state=state,
+        )
+        plan = state.current_plan()
+        data["next_step_preview"] = (
+            to_plain(_preview_for(plan.current_next_step(), ctx))
+            if plan and plan.current_next_step()
+            else None
+        )
+    return data
+
+
+def _preview_for(step: Any, ctx: Any) -> Any:
+    from drw.si.planner import preview_of
+
+    return preview_of(step, ctx)
+
+
+def op_si_ask(params: Params, store: ExperimentStore) -> dict[str, Any]:
+    from drw.si import ask
+
+    investigation_id = _param_str(params, "investigation_id")
+    question = _param_str(params, "question")
+    project_id, model_id = _si_scope(params)
+    try:
+        analysis, state = ask(
+            store, investigation_id, question, project_id=project_id, model_id=model_id
+        )
+    except Exception as exc:
+        raise _si_guard(exc) from exc
+    return {"analysis": to_plain(analysis), "state": to_plain(state)}
+
+
+def op_si_preview(params: Params, store: ExperimentStore) -> dict[str, Any]:
+    from drw.si import preview_step
+
+    investigation_id = _param_str(params, "investigation_id")
+    step_id = _param_str(params, "step_id")
+    project_id, model_id = _si_scope(params)
+    plan_id = params.get("plan_id") or None
+    try:
+        preview = preview_step(
+            store,
+            investigation_id,
+            step_id,
+            project_id=project_id,
+            model_id=model_id,
+            plan_id=str(plan_id) if plan_id else None,
+        )
+    except Exception as exc:
+        raise _si_guard(exc) from exc
+    return {"preview": to_plain(preview)}
+
+
+def op_si_execute(params: Params, store: ExperimentStore) -> dict[str, Any]:
+    from drw.si import approve_and_execute
+
+    investigation_id = _param_str(params, "investigation_id")
+    step_id = _param_str(params, "step_id")
+    project_id, model_id = _si_scope(params)
+    plan_id = params.get("plan_id") or None
+    approved = bool(params.get("approve", True))
+    try:
+        execution, interpretation, state = approve_and_execute(
+            store,
+            investigation_id,
+            step_id,
+            project_id=project_id,
+            model_id=model_id,
+            plan_id=str(plan_id) if plan_id else None,
+            approved=approved,
+        )
+    except Exception as exc:
+        raise _si_guard(exc) from exc
+    return {
+        "execution": to_plain(execution),
+        "interpretation": to_plain(interpretation),
+        "state": to_plain(state),
+    }
+
+
+def op_si_reject(params: Params, store: ExperimentStore) -> dict[str, Any]:
+    from drw.si import reject_plan_step
+
+    investigation_id = _param_str(params, "investigation_id")
+    step_id = _param_str(params, "step_id")
+    project_id, _model_id = _si_scope(params)
+    plan_id = params.get("plan_id") or None
+    try:
+        state = reject_plan_step(
+            store,
+            investigation_id,
+            step_id,
+            project_id=project_id,
+            plan_id=str(plan_id) if plan_id else None,
+        )
+    except Exception as exc:
+        raise _si_guard(exc) from exc
+    return {"state": to_plain(state)}
+
+
+def op_si_actions(_params: Params, _store: ExperimentStore) -> dict[str, Any]:
+    from drw.si import list_actions
+    from drw.si.provider import provider_status as si_provider_status
+
+    return {"actions": list_actions(), "provider": si_provider_status()}
+
+
+def op_si_provider(_params: Params, _store: ExperimentStore) -> dict[str, Any]:
+    from drw.si.provider import provider_status as si_provider_status
+
+    return si_provider_status()
+
+
 def op_environment(_params: Params, _store: ExperimentStore) -> dict[str, Any]:
     fingerprint = environment_fingerprint()
-    return {"environment": fingerprint, "environment_hash": fingerprint_hash(fingerprint)}
+    return {
+        "environment": fingerprint,
+        "environment_hash": fingerprint_hash(fingerprint),
+    }
 
 
 _OPS: dict[str, Callable[[Params, ExperimentStore], dict[str, Any]]] = {
@@ -858,12 +1059,22 @@ _OPS: dict[str, Callable[[Params, ExperimentStore], dict[str, Any]]] = {
     "create_project": op_create_project,
     "plan_experiment": op_plan_experiment,
     "planner_status": op_planner_status,
+    "si_state": op_si_state,
+    "si_ask": op_si_ask,
+    "si_preview": op_si_preview,
+    "si_execute": op_si_execute,
+    "si_reject": op_si_reject,
+    "si_actions": op_si_actions,
+    "si_provider": op_si_provider,
     "environment": op_environment,
 }
 
 
 def _error(code: str, message: str, diagnostics: Any = ()) -> dict[str, Any]:
-    return {"ok": False, "error": {"code": code, "message": message, "diagnostics": list(diagnostics)}}
+    return {
+        "ok": False,
+        "error": {"code": code, "message": message, "diagnostics": list(diagnostics)},
+    }
 
 
 def handle(request: Any, *, store: ExperimentStore | None = None) -> dict[str, Any]:
