@@ -43,8 +43,16 @@ browser  ──fetch──▶  Next route handler (app/api/**)  ──▶  lib/h
   files and the tests).
 * `src/lib/client.ts` - browser client; `src/lib/directClient.ts` is the
   in-process variant used by tests.
-* `src/components/Workspace.tsx` - the workflow: sample → configure → validate →
-  review → run → results → export → reopen.
+* `src/components/shell/**` - the inset application shell: project sidebar (with
+  the Library group), project switcher, and the investigation frame that holds the
+  contextual section navigation.
+* `src/views/project.tsx`, `src/views/investigation.tsx` - the routed pages:
+  project Overview, Investigations and Library (Data/Models/Experiments/Evidence);
+  and the investigation's SI, Overview, Model, Data, Experiments, Analysis,
+  Validation and Evidence.
+* `src/components/workspace/WorkspaceProvider.tsx` - the shared state behind SI and
+  Manual (they are the same product, not two).
+* `src/lib/routes.ts` - the route model (`/projects/:projectId/...`).
 
 ## Tests
 
@@ -54,12 +62,17 @@ pnpm --filter @drw/web test          # needs the Python core installed
 pnpm --filter @drw/web build
 ```
 
-`src/components/Workspace.e2e.test.tsx` renders the real UI and runs real
-experiments and evidence export through the bridge. It is not a browser test; see
-`docs/architecture/ADR-0008-web-boundary.md`.
+`src/views/app.e2e.test.tsx` renders the real routed UI (project shell and pages)
+and runs real experiments and evidence export through the bridge. It is not a
+browser test; see `docs/architecture/ADR-0008-web-boundary.md`.
 
 ## Scope
 
-No billing, teams, cloud orchestration, arbitrary model imports, global
-sensitivity, uncertainty quantification, or AI agent. Isolation is a process
-boundary, not a security sandbox.
+The researcher UI covers: the project + investigation shell; SI (the rule-based
+planner, or an optional LLM provider) proposing an experiment; Manual
+configuration, validation and running; results and evidence; dataset import;
+model-vs-observation evaluation; sensitivity, identifiability, calibration and
+**validation** (testing a frozen calibration against independent observations,
+reported as separate agreement / independence / acceptance axes) analyses.
+**Not implemented: parameter uncertainty and multi-objective calibration.**
+Isolation is a process boundary, not a security sandbox.

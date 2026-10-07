@@ -95,4 +95,17 @@ export const handlers = {
   calibrateExperiment: (experimentId: string, params: Record<string, unknown>) =>
     // The URL experiment id is authoritative: a body field may not override it.
     dispatch("calibrate", { ...params, experiment_id: experimentId }),
+  listCalibrations: () => dispatch("list_calibrations", {}),
+  getCalibration: (calibrationId: string) =>
+    dispatch("get_calibration", { calibration_id: calibrationId }),
+  runValidation: (experimentId: string, params: Record<string, unknown>) =>
+    // The URL experiment id is authoritative: a body field may not override it.
+    dispatch("run_validation", { ...params, experiment_id: experimentId }),
+  listValidations: () => dispatch("list_validations", {}),
+  getValidation: (validationId: string) =>
+    dispatch("get_validation", { validation_id: validationId }),
+  verifyValidation: (validationId: string) =>
+    dispatch("verify_validation", { validation_id: validationId }),
+  checkValidationStaleness: (validationId: string) =>
+    dispatch("check_validation_staleness", { validation_id: validationId }),
 };

@@ -14,10 +14,17 @@ import {
 } from "@carbon/react";
 
 import { LineChart } from "@/components/LineChart";
+import { ScientificStatus } from "@/components/page/ScientificStatus";
 import { Section } from "@/components/Section";
 import { ApiError, type DrwClient } from "@/lib/client";
 import { formatNumber } from "@/lib/format";
-import type { CalibrationConfig, CalibrationResult, DatasetSummary, ModelSchema } from "@/lib/types";
+import type {
+  CalibrationConfig,
+  CalibrationRef,
+  CalibrationResult,
+  DatasetSummary,
+  ModelSchema,
+} from "@/lib/types";
 
 const METRICS = [
   "rmse",
@@ -105,6 +112,7 @@ export function CalibrationPanel({
   const [maxWall, setMaxWall] = useState("600");
   const [identifiability, setIdentifiability] = useState("warn");
   const [result, setResult] = useState<CalibrationResult | null>(null);
+  const [storedRef, setStoredRef] = useState<CalibrationRef | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -166,9 +174,12 @@ export function CalibrationPanel({
     setBusy(true);
     setError(null);
     setResult(null);
+    setStoredRef(null);
     try {
-      const response = await client.calibrate(experimentId, { config: buildConfig() });
+      // Persist the calibration so it can be referenced by validation.
+      const response = await client.calibrate(experimentId, { config: buildConfig(), persist: true });
       setResult(response.calibration);
+      setStoredRef(response.ref ?? null);
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : caught instanceof Error ? caught.message : String(caught));
     } finally {
@@ -180,7 +191,7 @@ export function CalibrationPanel({
     <Section
       id="calibration-heading"
       title="Calibrate against dataset"
-      description="Fit bounded float parameters to a dataset by minimising an objective read from M12A. Serial, bounded, execution-free; a point estimate only - not uncertainty and not validation."
+      description="Fit bounded parameters to a dataset by minimising a chosen error metric (the objective). Serial, bounded and execution-free: a point estimate only - not parameter uncertainty and not validation."
     >
       <div className="drw-stack-tight" data-testid="calibration-panel">
         <div className="drw-formgrid">
@@ -342,6 +353,12 @@ export function CalibrationPanel({
           </div>
         ) : null}
 
+        {storedRef ? (
+          <p className="drw-hint" data-testid="calib-stored">
+            stored calibration {storedRef.calibration_id} — available to Validation.
+          </p>
+        ) : null}
+
         {result ? <Report result={result} /> : null}
       </div>
     </Section>
@@ -412,9 +429,9 @@ function Report({ result }: { result: CalibrationResult }) {
         </p>
       ) : null}
 
-      <p className="drw-hint" data-testid="calib-note">
+      <ScientificStatus level="not_validated" testId="calib-note">
         {result.note}
-      </p>
+      </ScientificStatus>
     </div>
   );
 }

@@ -67,7 +67,7 @@ export function DatasetsPanel({
     <Section
       id="datasets-heading"
       title="Datasets"
-      description="Stored scientific datasets: immutable, content-addressed, and independently verifiable."
+      description="Stored scientific datasets. Each dataset has a unique fingerprint (a content hash) you can use to verify it has not changed."
     >
       <div className="drw-stack-tight" data-testid="datasets-panel">
         {error ? (

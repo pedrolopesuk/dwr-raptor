@@ -99,6 +99,7 @@ export function InvestigationFrame({ children }: { children: ReactNode }) {
           </span>
         </nav>
         <nav className="drw-invnav" aria-label="Investigation">
+          <span className="drw-invnav__mode">{section === "si" ? "SI" : "Manual"}</span>
           {INVESTIGATION_SECTIONS.map((item) => (
             <NavLink
               key={item.id}

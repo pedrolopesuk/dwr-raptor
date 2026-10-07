@@ -49,7 +49,8 @@ test.describe("calibration in a browser", () => {
     const datasetOption = page.getByTestId("calib-dataset").locator("option", { hasText: "observed peaks" });
     await expect(datasetOption).toHaveCount(1);
     await page.getByTestId("calib-dataset").selectOption((await datasetOption.getAttribute("value")) ?? "");
-    await page.getByTestId("calib-free-alpha").check();
+    // Carbon renders the checkbox label over the input; click the label.
+    await page.locator('label[for="calib-free-alpha"]').click();
 
     const mapping = page.getByTestId("calib-mapping");
     const parsed = JSON.parse(await mapping.inputValue());

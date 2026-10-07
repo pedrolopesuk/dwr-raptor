@@ -20,7 +20,9 @@ Operations: ``list_models``, ``describe_model``, ``capabilities``,
 ``global_sensitivity``, ``identifiability``, ``list_dataset_sources``,
 ``inspect_dataset``, ``import_dataset``, ``list_datasets``, ``describe_dataset``
 (alias ``get_dataset``), ``verify_dataset``, ``evaluate``, ``calibrate``,
-``list_calibrations``, ``get_calibration``, ``verify_calibration``, ``list_projects``,
+``list_calibrations``, ``get_calibration``, ``verify_calibration``,
+``run_validation``, ``list_validations``, ``get_validation``,
+``verify_validation``, ``check_validation_staleness``, ``list_projects``,
 ``create_project``, ``plan_experiment``, ``planner_status``, ``environment``.
 
 The workspace root comes from ``DRW_WORKSPACE``. The bridge executes only
@@ -672,6 +674,87 @@ def op_verify_calibration(params: Params, store: ExperimentStore) -> dict[str, A
     return {"verification": to_plain(report)}
 
 
+def op_run_validation(params: Params, store: ExperimentStore) -> dict[str, Any]:
+    from drw.jobs import InvalidJobId, JobJournal
+    from drw.schema.validation import ValidationConfig
+    from drw.validation import validate_for_experiment
+    from drw.validation_store import ValidationStore
+
+    experiment_id = _param_str(params, "experiment_id")
+    try:
+        config = ValidationConfig.model_validate(_require(params, "config"))
+    except PydanticValidationError as exc:
+        raise ApiError(
+            "bad_request", "the validation config is not well formed", diagnostics=exc.errors()
+        ) from exc
+    # The request experiment id is authoritative.
+    config = config.model_copy(update={"experiment_id": experiment_id})
+    persist = bool(params.get("persist", False))
+
+    journal: JobJournal | None = None
+    if params.get("job_id") is not None:
+        try:
+            journal = JobJournal(store.root, str(params["job_id"]))
+        except InvalidJobId as exc:
+            raise ApiError("bad_request", str(exc)) from exc
+        journal.prune()
+        journal.append(
+            "started", total_runs=config.budget.max_evaluations, experiment_id=experiment_id
+        )
+
+    result = validate_for_experiment(experiment_id, store, config)
+
+    data: dict[str, Any] = {"validation": to_plain(result)}
+    if persist:
+        data["ref"] = to_plain(ValidationStore(store.root).save(result))
+    if journal is not None:
+        journal.append(
+            "finished",
+            status=result.agreement_status,
+            evaluations=result.evaluations_completed,
+        )
+    return data
+
+
+def op_list_validations(_params: Params, store: ExperimentStore) -> dict[str, Any]:
+    from drw.validation_store import ValidationStore
+
+    return {"validations": to_plain(ValidationStore(store.root).list())}
+
+
+def op_get_validation(params: Params, store: ExperimentStore) -> dict[str, Any]:
+    from drw.validation_store import ValidationStore
+
+    validations = ValidationStore(store.root)
+    validation_id = _param_str(params, "validation_id")
+    return {
+        "validation": to_plain(validations.load(validation_id)),
+        "ref": to_plain(validations.ref(validation_id)),
+    }
+
+
+def op_verify_validation(params: Params, store: ExperimentStore) -> dict[str, Any]:
+    from drw.validation_store import ValidationStore
+
+    report = ValidationStore(store.root).verify(_param_str(params, "validation_id"))
+    return {"verification": to_plain(report)}
+
+
+def op_check_validation_staleness(params: Params, store: ExperimentStore) -> dict[str, Any]:
+    from drw.calibration_store import CalibrationStore
+    from drw.dataset_store import DatasetStore
+    from drw.validation_store import ValidationStore, check_validation_staleness
+
+    validations = ValidationStore(store.root)
+    result = validations.load(_param_str(params, "validation_id"))
+    staleness = check_validation_staleness(
+        result,
+        calibration_store=CalibrationStore(store.root),
+        dataset_store=DatasetStore(store.root),
+    )
+    return {"staleness": to_plain(staleness)}
+
+
 def op_sensitivity(params: Params, store: ExperimentStore) -> dict[str, Any]:
     loaded = store.load(_param_str(params, "experiment_id"))
     spec = ExperimentSpec.model_validate(loaded["spec"])
@@ -766,6 +849,11 @@ _OPS: dict[str, Callable[[Params, ExperimentStore], dict[str, Any]]] = {
     "list_calibrations": op_list_calibrations,
     "get_calibration": op_get_calibration,
     "verify_calibration": op_verify_calibration,
+    "run_validation": op_run_validation,
+    "list_validations": op_list_validations,
+    "get_validation": op_get_validation,
+    "verify_validation": op_verify_validation,
+    "check_validation_staleness": op_check_validation_staleness,
     "list_projects": op_list_projects,
     "create_project": op_create_project,
     "plan_experiment": op_plan_experiment,

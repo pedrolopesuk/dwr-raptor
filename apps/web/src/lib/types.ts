@@ -252,6 +252,8 @@ export interface ModelCapabilities {
   global_sensitivity: GlobalSensitivityCapabilities;
   /** Authoritative local-identifiability study configuration (single-sourced in the core). */
   identifiability?: IdentifiabilityCapabilities;
+  /** Authoritative validation configuration (single-sourced in the core). */
+  validation?: ValidationCapabilities;
   limitations: string[];
 }
 
@@ -844,6 +846,12 @@ export interface CalibrationResult {
   history: CalibrationCandidate[];
   diagnostics: Diagnostic[];
   provenance: Record<string, unknown>;
+  /** The full stored request (present when fetched via get_calibration). */
+  config?: {
+    dataset: DatasetRef;
+    mapping: Record<string, unknown>;
+    [key: string]: unknown;
+  };
   note: string;
 }
 
@@ -862,4 +870,208 @@ export interface CalibrationVerification {
   ok: boolean;
   checks: { name: string; status: string; message: string }[];
   errors: number;
+}
+
+/** Validation / generalisation of a frozen calibration (M12C). */
+export interface ValidationCapabilities {
+  default_metrics: string[];
+  metrics: string[];
+  independence_checks: string[];
+  verifiable_dimensions: string[];
+  declared_dimensions: string[];
+  default_max_evaluations: number;
+  default_max_wall_seconds: number;
+  report_gap_default: boolean;
+}
+
+export interface AcceptanceCriterion {
+  metric: string;
+  observation?: string | null;
+  output?: string | null;
+  op: "<=" | "<" | ">=" | ">";
+  threshold: number;
+  rationale?: string;
+}
+
+export interface CoordinateWindow {
+  coordinate: string;
+  lower?: number | string | null;
+  upper?: number | string | null;
+}
+
+export interface IndependenceSpec {
+  vs_dataset: DatasetRef;
+  coordinate_windows?: CoordinateWindow[];
+  group_key?: string | null;
+  claimed_dimensions?: string[];
+  declaration?: string;
+}
+
+export interface ValidationDatasetConfig {
+  dataset: DatasetRef;
+  mapping: Record<string, unknown>;
+  independence: IndependenceSpec;
+  label?: string;
+  acceptance?: AcceptanceCriterion[] | null;
+}
+
+export interface ValidationConfig {
+  schema_version?: string;
+  experiment_id: string;
+  model_ref: { model_id: string; version?: string | null };
+  calibration: CalibrationRef;
+  datasets: ValidationDatasetConfig[];
+  evaluation?: EvaluationConfig;
+  budget?: CalibrationBudget;
+  execution?: CalibrationExecutionTemplate;
+  acceptance?: AcceptanceCriterion[];
+  report_gap?: boolean;
+  allow_non_independent?: boolean;
+  data_role?: string;
+  notes?: string;
+}
+
+export interface IndependenceCheck {
+  dimension: string;
+  state: "verified" | "violated" | "declared" | "unverifiable" | string;
+  message: string;
+}
+
+export interface IndependenceReport {
+  status: string;
+  checks: IndependenceCheck[];
+  declaration: string;
+  note: string;
+}
+
+export interface CoordinateRangeComparison {
+  coordinate: string;
+  kind: string;
+  calibration_min: number | null;
+  calibration_max: number | null;
+  validation_min: number | null;
+  validation_max: number | null;
+  classification: string;
+}
+
+export interface ValidationContext {
+  coordinate_ranges: CoordinateRangeComparison[];
+  unseen_groups: string[];
+  regime: string;
+  note: string;
+}
+
+export interface AcceptanceOutcome {
+  metric: string;
+  observation?: string | null;
+  output?: string | null;
+  op: string;
+  threshold: number;
+  observed?: number | null;
+  status: "met" | "not_met" | "indeterminate" | string;
+  message: string;
+}
+
+export interface ValidationDatasetOutcome {
+  label: string;
+  dataset: DatasetRef;
+  mapping_hash: string;
+  independence: IndependenceReport;
+  context: ValidationContext;
+  run_id?: string | null;
+  run_status?: string | null;
+  evaluation_hash?: string | null;
+  metrics: Record<string, number | null>;
+  n_used: number;
+  n_excluded: number;
+  exclusion_counts: Record<string, number>;
+  calibration_metrics: Record<string, number | null>;
+  calibration_evaluation_hash?: string | null;
+  acceptance: AcceptanceOutcome[];
+  agreement: string;
+  failure?: string | null;
+  diagnostics: Diagnostic[];
+}
+
+export interface ValidationCalibrationSnapshot {
+  calibration_id: string;
+  result_hash: string;
+  calibration_hash: string;
+  model_id: string;
+  model_hash: string;
+  parameters: Record<string, number>;
+  dataset_content_hash: string;
+  dataset_science_hash: string;
+  mapping_hash: string;
+  evaluation_hash?: string | null;
+}
+
+export interface ValidationProvenance {
+  experiment_id: string;
+  spec_hash: string;
+  model_id: string;
+  model_hash: string;
+  calibration_result_hash: string;
+  calibration_hash: string;
+  calibration_dataset_content_hash: string;
+  calibration_dataset_science_hash: string;
+  calibration_mapping_hash: string;
+  calibration_evaluation_hash?: string | null;
+  validation_dataset_content_hashes: string[];
+  validation_science_hashes: string[];
+  mapping_hashes: string[];
+  evaluation_config_hash: string;
+  evaluation_hashes: string[];
+  environment_hash: string;
+  engine_schema_version: string;
+  scipy_version: string;
+  deterministic: boolean;
+}
+
+/** The M12C validation outcome. Kept distinct from `ValidationResult` (spec validation). */
+export interface ValidationOutcome {
+  schema_version: string;
+  validation_hash: string;
+  result_hash: string;
+  experiment_id: string;
+  model_ref: { model_id: string; version?: string | null };
+  config: ValidationConfig;
+  calibration: ValidationCalibrationSnapshot;
+  datasets: ValidationDatasetOutcome[];
+  agreement_status: string;
+  acceptance_status: string;
+  independence_status: string;
+  evaluations_requested: number;
+  evaluations_completed: number;
+  evaluations_failed: number;
+  wall_seconds: number;
+  descriptive: boolean;
+  diagnostics: Diagnostic[];
+  provenance: ValidationProvenance;
+  note: string;
+}
+
+export interface ValidationRef {
+  validation_id: string;
+  result_hash: string;
+  experiment_id: string;
+  model_id: string;
+  agreement_status: string;
+  created_at?: string | null;
+}
+
+export interface ValidationVerification {
+  validation_id: string;
+  result_hash: string;
+  ok: boolean;
+  checks: { name: string; status: string; message: string }[];
+  errors: number;
+}
+
+export interface ValidationStaleness {
+  validation_id: string;
+  result_hash: string;
+  fresh: boolean;
+  reasons: string[];
+  checks: { name: string; status: string; message: string }[];
 }

@@ -127,11 +127,11 @@ test.describe("researcher workflow in a browser", () => {
     await expect(page.getByTestId("status-value")).toHaveText(/^timed_out$/, { timeout: 150_000 });
   });
 
-  test("validation is shown honestly as not implemented", async ({ page }) => {
+  test("validation is honest before a stored run", async ({ page }) => {
     await startSampleDraft(page);
     await investigationNav(page, "Validation").click();
-    await expect(page.getByTestId("validation-unavailable")).toContainText(
-      "Not implemented in this version",
-    );
+    // A draft cannot be validated: the page asks for a stored run instead of faking a result.
+    await expect(page.getByTestId("needs-run")).toBeVisible();
+    await expect(page.getByTestId("investigation-validation")).toContainText(/frozen/i);
   });
 });

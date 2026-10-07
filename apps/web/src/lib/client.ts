@@ -35,7 +35,12 @@ import type {
   SensitivityData,
   SobolReport,
   UncertaintySummary,
+  ValidationConfig,
+  ValidationOutcome,
+  ValidationRef,
   ValidationResult,
+  ValidationStaleness,
+  ValidationVerification,
 } from "./types";
 
 export interface RunOptions {
@@ -99,6 +104,20 @@ export interface DrwClient {
     experimentId: string,
     options: { config: CalibrationConfig; persist?: boolean; jobId?: string },
   ): Promise<{ calibration: CalibrationResult; ref?: CalibrationRef }>;
+  listCalibrations(): Promise<CalibrationRef[]>;
+  getCalibration(
+    calibrationId: string,
+  ): Promise<{ calibration: CalibrationResult; ref: CalibrationRef }>;
+  runValidation(
+    experimentId: string,
+    options: { config: ValidationConfig; persist?: boolean; jobId?: string },
+  ): Promise<{ validation: ValidationOutcome; ref?: ValidationRef }>;
+  listValidations(): Promise<ValidationRef[]>;
+  getValidation(
+    validationId: string,
+  ): Promise<{ validation: ValidationOutcome; ref: ValidationRef }>;
+  verifyValidation(validationId: string): Promise<ValidationVerification>;
+  checkValidationStaleness(validationId: string): Promise<ValidationStaleness>;
 }
 
 export class ApiError extends Error {
@@ -299,5 +318,34 @@ export function createFetchClient(): DrwClient {
         `/api/experiments/${encodeURIComponent(experimentId)}/calibrate`,
         post({ config: options.config, persist: options.persist, job_id: options.jobId }),
       ),
+    listCalibrations: async () =>
+      (await request<{ calibrations: CalibrationRef[] }>("/api/calibrations")).calibrations,
+    getCalibration: (calibrationId) =>
+      request<{ calibration: CalibrationResult; ref: CalibrationRef }>(
+        `/api/calibrations/${encodeURIComponent(calibrationId)}`,
+      ),
+    runValidation: (experimentId, options) =>
+      request<{ validation: ValidationOutcome; ref?: ValidationRef }>(
+        `/api/experiments/${encodeURIComponent(experimentId)}/validation`,
+        post({ config: options.config, persist: options.persist, job_id: options.jobId }),
+      ),
+    listValidations: async () =>
+      (await request<{ validations: ValidationRef[] }>("/api/validations")).validations,
+    getValidation: (validationId) =>
+      request<{ validation: ValidationOutcome; ref: ValidationRef }>(
+        `/api/validations/${encodeURIComponent(validationId)}`,
+      ),
+    verifyValidation: async (validationId) =>
+      (
+        await request<{ verification: ValidationVerification }>(
+          `/api/validations/${encodeURIComponent(validationId)}/verify`,
+        )
+      ).verification,
+    checkValidationStaleness: async (validationId) =>
+      (
+        await request<{ staleness: ValidationStaleness }>(
+          `/api/validations/${encodeURIComponent(validationId)}/staleness`,
+        )
+      ).staleness,
   };
 }

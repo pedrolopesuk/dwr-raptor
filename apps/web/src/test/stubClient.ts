@@ -10,6 +10,7 @@ import { vi } from "vitest";
 import type { DrwClient } from "@/lib/client";
 import type {
   CalibrationCandidate,
+  CalibrationRef,
   CalibrationResult,
   CsvInspection,
   DatasetDetail,
@@ -28,6 +29,9 @@ import type {
   RunRecord,
   SobolReport,
   UncertaintySummary,
+  ValidationDatasetOutcome,
+  ValidationOutcome,
+  ValidationRef,
   ValidationResult,
 } from "@/lib/types";
 
@@ -604,7 +608,144 @@ export function calibrationResult(overrides: Partial<CalibrationResult> = {}): C
     history: [candidate],
     diagnostics: [],
     provenance: { scipy_version: "1.11.0" },
+    config: {
+      dataset: {
+        dataset_id: "ds-abcabcabcabc", content_hash: HASH, name: "lightcurve",
+        created_at: "2026-01-01T00:00:00+00:00",
+      },
+      mapping: {},
+    },
     note: "Calibration reports a point estimate; not a statement of parameter uncertainty.",
+    ...overrides,
+  };
+}
+
+export function calibrationRef(overrides: Partial<CalibrationRef> = {}): CalibrationRef {
+  return {
+    calibration_id: "cal-dddddddddddd",
+    result_hash: "d".repeat(64),
+    experiment_id: "exp-000000000000",
+    model_id: "predator-prey",
+    status: "converged",
+    created_at: "2026-01-01T00:00:00+00:00",
+    ...overrides,
+  };
+}
+
+export function validationRef(overrides: Partial<ValidationRef> = {}): ValidationRef {
+  return {
+    validation_id: "val-eeeeeeeeeeee",
+    result_hash: "e".repeat(64),
+    experiment_id: "exp-000000000000",
+    model_id: "predator-prey",
+    agreement_status: "evaluated",
+    created_at: "2026-01-01T00:00:00+00:00",
+    ...overrides,
+  };
+}
+
+export function validationDatasetOutcome(
+  overrides: Partial<ValidationDatasetOutcome> = {},
+): ValidationDatasetOutcome {
+  return {
+    label: "held out",
+    dataset: {
+      dataset_id: "ds-abcabcabcabc", content_hash: "a".repeat(64), name: "lightcurve",
+      created_at: "2026-01-01T00:00:00+00:00",
+    },
+    mapping_hash: "3".repeat(64),
+    independence: {
+      status: "verified",
+      checks: [{ dimension: "dataset", state: "verified", message: "distinct" }],
+      declaration: "",
+      note: "every claimed independence dimension was verified mechanically.",
+    },
+    context: {
+      coordinate_ranges: [],
+      unseen_groups: [],
+      regime: "",
+      note: "Validation data lies within the calibration coordinate range.",
+    },
+    run_id: "exp-000000000000-r0000",
+    run_status: "succeeded",
+    evaluation_hash: "4".repeat(64),
+    metrics: { rmse: 0.1, mae: 0.08, max_abs_error: 0.2 },
+    n_used: 3,
+    n_excluded: 0,
+    exclusion_counts: {},
+    calibration_metrics: { rmse: 0.05, mae: 0.04, max_abs_error: 0.1 },
+    calibration_evaluation_hash: "5".repeat(64),
+    acceptance: [
+      {
+        metric: "rmse", observation: null, output: null, op: "<=", threshold: 0.5,
+        observed: 0.1, status: "met", message: "",
+      },
+    ],
+    agreement: "evaluated",
+    failure: null,
+    diagnostics: [],
+    ...overrides,
+  };
+}
+
+export function validationOutcome(overrides: Partial<ValidationOutcome> = {}): ValidationOutcome {
+  const snapshot = calibrationRef();
+  return {
+    schema_version: "1.0.0",
+    validation_hash: "1".repeat(64),
+    result_hash: "e".repeat(64),
+    experiment_id: "exp-000000000000",
+    model_ref: { model_id: "predator-prey", version: "1.0.0" },
+    config: {
+      experiment_id: "exp-000000000000",
+      model_ref: { model_id: "predator-prey" },
+      calibration: snapshot,
+      datasets: [],
+    },
+    calibration: {
+      calibration_id: snapshot.calibration_id,
+      result_hash: snapshot.result_hash,
+      calibration_hash: "c".repeat(64),
+      model_id: "predator-prey",
+      model_hash: "f".repeat(64),
+      parameters: { alpha: 1.1 },
+      dataset_content_hash: "a".repeat(64),
+      dataset_science_hash: "2".repeat(64),
+      mapping_hash: "3".repeat(64),
+      evaluation_hash: null,
+    },
+    datasets: [validationDatasetOutcome()],
+    agreement_status: "evaluated",
+    acceptance_status: "met",
+    independence_status: "verified",
+    evaluations_requested: 10,
+    evaluations_completed: 2,
+    evaluations_failed: 0,
+    wall_seconds: 0.4,
+    descriptive: false,
+    diagnostics: [],
+    provenance: {
+      experiment_id: "exp-000000000000",
+      spec_hash: "a".repeat(64),
+      model_id: "predator-prey",
+      model_hash: "f".repeat(64),
+      calibration_result_hash: snapshot.result_hash,
+      calibration_hash: "c".repeat(64),
+      calibration_dataset_content_hash: "a".repeat(64),
+      calibration_dataset_science_hash: "2".repeat(64),
+      calibration_mapping_hash: "3".repeat(64),
+      calibration_evaluation_hash: null,
+      validation_dataset_content_hashes: ["a".repeat(64)],
+      validation_science_hashes: ["2".repeat(64)],
+      mapping_hashes: ["3".repeat(64)],
+      evaluation_config_hash: "6".repeat(64),
+      evaluation_hashes: ["4".repeat(64)],
+      environment_hash: "7".repeat(64),
+      engine_schema_version: "1.0.0",
+      scipy_version: "1.11.0",
+      deterministic: true,
+    },
+    note: "Validation tests a frozen calibrated model against observations that were not used to fit it.",
     ...overrides,
   };
 }
@@ -713,6 +854,25 @@ export function stubClient(overrides: Partial<DrwClient> = {}): DrwClient {
     verifyDataset: vi.fn().mockResolvedValue(datasetVerification()),
     evaluate: vi.fn().mockResolvedValue(evaluationResult()),
     calibrate: vi.fn().mockResolvedValue({ calibration: calibrationResult() }),
+    listCalibrations: vi.fn().mockResolvedValue([calibrationRef()]),
+    getCalibration: vi.fn().mockResolvedValue({ calibration: calibrationResult(), ref: calibrationRef() }),
+    runValidation: vi.fn().mockResolvedValue({ validation: validationOutcome(), ref: validationRef() }),
+    listValidations: vi.fn().mockResolvedValue([validationRef()]),
+    getValidation: vi.fn().mockResolvedValue({ validation: validationOutcome(), ref: validationRef() }),
+    verifyValidation: vi.fn().mockResolvedValue({
+      validation_id: "val-eeeeeeeeeeee",
+      result_hash: "e".repeat(64),
+      ok: true,
+      checks: [{ name: "result_hash", status: "ok", message: "" }],
+      errors: 0,
+    }),
+    checkValidationStaleness: vi.fn().mockResolvedValue({
+      validation_id: "val-eeeeeeeeeeee",
+      result_hash: "e".repeat(64),
+      fresh: true,
+      reasons: [],
+      checks: [],
+    }),
   };
   return { ...base, ...overrides };
 }

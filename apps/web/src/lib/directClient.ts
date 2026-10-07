@@ -38,7 +38,12 @@ import type {
   SensitivityData,
   SobolReport,
   UncertaintySummary,
+  ValidationConfig,
+  ValidationOutcome,
+  ValidationRef,
   ValidationResult,
+  ValidationStaleness,
+  ValidationVerification,
 } from "./types";
 
 async function from<T>(result: Promise<HandlerResult>): Promise<T> {
@@ -149,5 +154,37 @@ export function createDirectClient(): DrwClient {
           job_id: options.jobId,
         }),
       ),
+    listCalibrations: async () =>
+      (await from<{ calibrations: CalibrationRef[] }>(handlers.listCalibrations())).calibrations,
+    getCalibration: (calibrationId) =>
+      from<{ calibration: CalibrationResult; ref: CalibrationRef }>(
+        handlers.getCalibration(calibrationId),
+      ),
+    runValidation: (experimentId, options) =>
+      from<{ validation: ValidationOutcome; ref?: ValidationRef }>(
+        handlers.runValidation(experimentId, {
+          config: options.config as unknown as ValidationConfig,
+          persist: options.persist,
+          job_id: options.jobId,
+        }),
+      ),
+    listValidations: async () =>
+      (await from<{ validations: ValidationRef[] }>(handlers.listValidations())).validations,
+    getValidation: (validationId) =>
+      from<{ validation: ValidationOutcome; ref: ValidationRef }>(
+        handlers.getValidation(validationId),
+      ),
+    verifyValidation: async (validationId) =>
+      (
+        await from<{ verification: ValidationVerification }>(
+          handlers.verifyValidation(validationId),
+        )
+      ).verification,
+    checkValidationStaleness: async (validationId) =>
+      (
+        await from<{ staleness: ValidationStaleness }>(
+          handlers.checkValidationStaleness(validationId),
+        )
+      ).staleness,
   };
 }

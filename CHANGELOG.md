@@ -4,6 +4,76 @@ All notable changes to this project are documented in this file. The project
 follows a milestone-oriented changelog; entries record *scientific* behaviour
 changes explicitly (see the spec's AI coding loop, section 12.4).
 
+## [Milestone 12C] - Validation / generalisation
+
+### Added
+
+- **Validation orchestration layer** (`drw/schema/validation.py`, `drw/validation/`,
+  `drw/validation_store.py`). Out-of-sample validation of a **frozen** calibration:
+  it takes `CalibrationResult.best.parameters`, executes the model with those
+  parameters **frozen** over independent validation datasets through the existing
+  `Runner`, and compares each run with **M12A** `evaluate_run`. It never executes a
+  model directly, never re-implements comparison and contains **no optimizer**
+  (validation cannot refit).
+- **`ValidationConfig`** (request): model ref, `CalibrationRef`, one or more
+  `ValidationDataset`s (`DatasetRef` + `ObservationMapping` + `IndependenceSpec`),
+  an `EvaluationConfig`, a `ValidationBudget` (its own budget; never shared with
+  M12B), an execution template, optional user `AcceptanceCriterion`s, report-gap and
+  descriptive-run flags. Model-aware checks via `validate_validation_config` /
+  `resolve_validation`.
+- **Frozen-parameter enforcement.** The run baseline is `best.parameters` ∪ fixed ∪
+  experiment baseline ∪ nominal; after the run the M12A
+  `EvaluationResult.parameter_snapshot` is asserted equal to the frozen vector, else
+  `validation_parameter_mismatch` fails closed.
+- **Structured independence model** (never a boolean). Mechanical checks: dataset
+  identity / `science_hash` / source-file SHA-256 overlap, coordinate / time-window
+  disjointness and group-key disjointness ⇒ `verified` / `violated` / `declared` /
+  `unverifiable`; measurement process and experiment lineage are `declared` only and
+  are never upgraded to verified. A `violated` dataset fails closed unless the run
+  is explicitly flagged descriptive.
+- **Per-dataset results** (no cross-dataset scalar): agreement (M12A metrics,
+  counts, exclusions), the optional descriptive calibration-vs-validation gap, the
+  independence report, the interpolation/extrapolation context and the acceptance
+  outcomes.
+- **Optional acceptance criteria** (`<=`, `<`, `>=`, `>` on a requested M12A
+  metric): a separate axis from agreement; a null/non-finite metric is
+  `indeterminate`, never `met`; `met` alone never yields a supported status.
+- **Metrics** are exactly M12A metrics (`rmse`, `mae`, `max_abs_error`, …); no new
+  comparison mathematics, no R²/MAPE/log/domain metrics.
+- **Content-addressed `ValidationStore`**: `<workspace>/validations/<validation_id>/
+  {config,result,provenance,manifest}.json`, `validation_id = "val-" +
+  result_hash[:12]`, append-only, idempotent identical save, conflicting-payload
+  rejection, integrity `verify`, plus `check_validation_staleness` computed on read
+  from the recorded hashes (never a mutable flag; never auto-recomputed).
+- **Determinism.** `validation_hash` (request identity, wall-clock/outcomes
+  excluded) and `result_hash` (outcome identity); no randomness.
+- **CLI** `drw validation run|list|get|verify|staleness`; **bridge ops**
+  `run_validation`, `list_validations`, `get_validation`, `verify_validation`,
+  `check_validation_staleness`; additive `capabilities.validation`; web Validation
+  page (frozen-calibration setup, the three separate axes, metric/gap table,
+  independence report, staleness banner); the UI no longer says validation is
+  unavailable.
+- Tests: contract/identity/frozen-vector (42), independence checks (22), scientific
+  benchmarks (18), store/staleness (13), CLI/bridge/store integration (7), plus web
+  component + Playwright.
+
+### Notes
+
+- **Validation is not calibration, not model selection and not proof that the model
+  is true.** Agreement, independence and any acceptance criterion are reported
+  separately.
+- **Explicitly not implemented:** cross-validation (k-fold/grouped/blocked/temporal/
+  leave-one-group-out), cross-dataset scalar aggregation, model selection /
+  hyperparameter search, Bayesian/posterior predictive validation, uncertainty
+  propagation, R²/MAPE/log/domain metrics, extrapolation geometry and run-output
+  caching.
+- **Unmodified**: `ExperimentSpec`, `ModelSchema`, `Runner`, `RunRecord`/
+  `ModelResult`/`OutputValue`, `EvidenceManifest`, M11 `Dataset`/`ObservationSet`/
+  `ObservationMapping`/`DatasetStore`/`science_hash`, M12A `evaluate`/`evaluate_run`/
+  `EvaluationConfig`/`evaluation_hash`, and M12B calibration semantics / contracts /
+  `CalibrationStore`.
+- Zero new dependencies.
+
 ## [Milestone 12B] - Calibration / parameter estimation
 
 ### Added

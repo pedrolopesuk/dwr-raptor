@@ -147,10 +147,14 @@ export function PlanCard({
   message,
   model,
   onReview,
+  onRun,
+  running,
 }: {
   message: Extract<SiMessage, { kind: "plan" }>;
   model: ModelSummary | undefined;
   onReview: (spec: ExperimentSpec, modelId: string) => void;
+  onRun: (spec: ExperimentSpec, modelId: string) => void;
+  running: boolean;
 }) {
   const { proposal, modelId } = message;
   const spec = proposal.spec;
@@ -225,7 +229,19 @@ export function PlanCard({
         >
           Review in Manual
         </Button>
-        <span className="si-plan__note">Nothing has run. You validate and run from Manual.</span>
+        <Button
+          kind="tertiary"
+          size="md"
+          data-testid="si-run"
+          disabled={running || !proposal.validation_ok}
+          onClick={() => onRun(spec, modelId)}
+        >
+          Run
+        </Button>
+        <span className="si-plan__note">
+          Nothing has run yet. Run validates with the engine first, then executes; Review in Manual
+          exposes every setting before you commit.
+        </span>
       </div>
     </div>
   );
@@ -299,6 +315,8 @@ export function InvestigationSi({
                       message={message}
                       model={ws.models.find((m) => m.model_id === message.modelId)}
                       onReview={(spec, id) => void ws.reviewProposal(spec, id)}
+                      onRun={(spec, id) => void ws.runProposal(spec, id)}
+                      running={busy}
                     />
                   ) : (
                     <div className="si-plan" data-testid="si-error">
@@ -321,11 +339,15 @@ export function InvestigationSi({
         </div>
       ) : (
         <div className="si__welcome">
+          <p className="drw-eyebrow" data-testid="si-name">
+            SI &mdash; Scientific Intelligence
+          </p>
           <h1 className="si__title">
             {investigationId === "draft" ? "What are you investigating?" : "How can I help with this investigation?"}
           </h1>
           <p className="si__sub">
-            Ask SI about the model, the observations, or the experiment behind this investigation.
+            Turns a research question into a proposed, inspectable scientific workflow. Nothing runs
+            without your approval.
           </p>
         </div>
       )}
@@ -336,8 +358,9 @@ export function InvestigationSi({
           {!hasThread ? <Suggestions items={INVESTIGATION_SUGGESTIONS} onPick={pick} /> : null}
           <p className="si__foot">
             {ws.plannerNote ? ws.plannerNote.note : "Checking planner configuration..."} Today SI
-            proposes experiment configurations; analyses are run from the Analysis page. SI
-            proposes, you decide what runs.
+            proposes experiment configurations and hands them to Manual; analyses (sensitivity,
+            identifiability, calibration) run from the Analysis page. SI proposes; you decide what
+            runs.
           </p>
         </div>
       </div>

@@ -21,6 +21,7 @@ import {
 } from "@carbon/react";
 
 import { LineChart } from "@/components/LineChart";
+import { ScientificStatus } from "@/components/page/ScientificStatus";
 import { Section } from "@/components/Section";
 import { ApiError, type DrwClient } from "@/lib/client";
 import { formatNumber } from "@/lib/format";
@@ -338,10 +339,10 @@ function Report({ result }: { result: EvaluationResult }) {
         {result.provenance.model_hash.slice(0, 12)}… · dataset {result.provenance.dataset_content_hash.slice(0, 12)}… ·
         mapping {result.provenance.mapping_hash.slice(0, 12)}…
       </p>
-      <p className="drw-hint">
-        Evaluation is read-only and execution-free; it is not calibration, not validation and not a scientific
-        conclusion.
-      </p>
+      <ScientificStatus level={result.ok ? "supported" : "descriptive"}>
+        Evaluation compares the model with the configured observations and mapping. It is not
+        calibration, not validation, and not a scientific conclusion.
+      </ScientificStatus>
     </div>
   );
 }

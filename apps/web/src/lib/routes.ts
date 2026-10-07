@@ -14,8 +14,8 @@ export const DRAFT_ID = "draft";
 export type InvestigationSection =
   | "si"
   | "overview"
-  | "data"
   | "model"
+  | "data"
   | "experiments"
   | "analysis"
   | "validation"
@@ -23,14 +23,26 @@ export type InvestigationSection =
 
 export type ProjectSection = "overview" | "investigations" | "data" | "models" | "experiments" | "evidence";
 
+/** Investigation navigation. Conceptual order: SI, Overview, Model, Data, Experiments, Analysis, Validation, Evidence. */
 export const INVESTIGATION_SECTIONS: { id: InvestigationSection; label: string }[] = [
   { id: "si", label: "SI" },
   { id: "overview", label: "Overview" },
-  { id: "data", label: "Data" },
   { id: "model", label: "Model" },
+  { id: "data", label: "Data" },
   { id: "experiments", label: "Experiments" },
   { id: "analysis", label: "Analysis" },
   { id: "validation", label: "Validation" },
+  { id: "evidence", label: "Evidence" },
+];
+
+/**
+ * Project Library: everything that exists in this project (as opposed to an
+ * investigation, which is everything relevant to one scientific question).
+ */
+export const LIBRARY_SECTIONS: { id: Extract<ProjectSection, "data" | "models" | "experiments" | "evidence">; label: string }[] = [
+  { id: "data", label: "Data" },
+  { id: "models", label: "Models" },
+  { id: "experiments", label: "Experiments" },
   { id: "evidence", label: "Evidence" },
 ];
 

@@ -37,16 +37,19 @@ import {
 
 import { ProjectSwitcher } from "@/components/shell/ProjectSwitcher";
 import { useWorkspace } from "@/components/workspace/WorkspaceProvider";
-import { paths, useRoute, type ProjectSection } from "@/lib/routes";
+import { LIBRARY_SECTIONS, paths, useRoute, type ProjectSection } from "@/lib/routes";
 
 const NAV_ITEMS: { id: ProjectSection; label: string; icon: typeof Home }[] = [
   { id: "overview", label: "Overview", icon: Home },
   { id: "investigations", label: "Investigations", icon: Microscope },
-  { id: "data", label: "Data", icon: DataBase },
-  { id: "models", label: "Models", icon: Cube },
-  { id: "experiments", label: "Experiments", icon: Chemistry },
-  { id: "evidence", label: "Evidence", icon: Report },
 ];
+
+const LIBRARY_ICONS: Record<string, typeof Home> = {
+  data: DataBase,
+  models: Cube,
+  experiments: Chemistry,
+  evidence: Report,
+};
 
 type SearchItem = {
   key: string;
@@ -186,15 +189,32 @@ function HeaderHelp() {
       <PopoverContent>
         <div className="drw-popbody" id={panelId} role="dialog" aria-label="How DRW works">
           <dl className="drw-help">
-            <dt>Investigation</dt>
-            <dd>A scientific question and the stored experiment that addresses it.</dd>
-            <dt>SI</dt>
+            <dt>Project &amp; Library</dt>
             <dd>
-              Describe what you want to learn. SI proposes a configuration; it never runs one for
-              you.
+              A project is a body of work. Its <strong>Library</strong> holds everything that exists
+              in it: data, models, experiments and evidence.
+            </dd>
+            <dt>Investigation</dt>
+            <dd>
+              One scientific question: the model and data it uses, the experiments, the analysis,
+              and the evidence that answers it.
+            </dd>
+            <dt>SI &mdash; Scientific Intelligence</dt>
+            <dd>
+              Turns a research question into a proposed, inspectable workflow. SI proposes; the
+              user decides. Nothing runs without your approval.
             </dd>
             <dt>Manual</dt>
-            <dd>The same machinery, exposed: model, parameters, validation, runs and analyses.</dd>
+            <dd>
+              The direct scientific controls behind an SI proposal: parameters, bounds, data,
+              mapping, objective, optimizer and budget.
+            </dd>
+            <dt>Evaluation, calibration, validation</dt>
+            <dd>
+              Evaluation compares a run with observations. Calibration fits parameters to that
+              comparison. Validation tests the calibrated model, with its parameters frozen,
+              against independent observations that were not used to fit it.
+            </dd>
             <dt>Evidence</dt>
             <dd>Every result is tied to the specification, seed and environment that produced it.</dd>
           </dl>
@@ -360,6 +380,20 @@ export function AppShell({ children }: { children: ReactNode }) {
                 }
                 renderIcon={icon}
                 isActive={route.projectSection === id && (id !== "investigations" || !investigationId)}
+              >
+                {label}
+              </SideNavLink>
+            ))}
+            <li className="drw-navgroup" aria-hidden="true">
+              Library
+            </li>
+            {LIBRARY_SECTIONS.map(({ id, label }) => (
+              <SideNavLink
+                key={id}
+                as={RouterAnchor}
+                href={paths.projectSection(projectId, id)}
+                renderIcon={LIBRARY_ICONS[id]}
+                isActive={route.projectSection === id}
               >
                 {label}
               </SideNavLink>

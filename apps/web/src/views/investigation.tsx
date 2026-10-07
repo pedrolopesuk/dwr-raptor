@@ -13,6 +13,7 @@ import { ExperimentEditor } from "@/components/ExperimentEditor";
 import { GlobalSensitivityPanel } from "@/components/GlobalSensitivityPanel";
 import { IdentifiabilityPanel } from "@/components/IdentifiabilityPanel";
 import { Page, EmptyState, StateMark, SubNav, type StateKind } from "@/components/page/Page";
+import { ScientificStatus } from "@/components/page/ScientificStatus";
 import { ReproducePanel } from "@/components/ReproducePanel";
 import { ResultsView } from "@/components/ResultsView";
 import { ReviewPanel } from "@/components/ReviewPanel";
@@ -21,6 +22,7 @@ import { NavLink } from "@/components/shell/NavLink";
 import { InvestigationSi } from "@/components/si/SiView";
 import { StatusBanner } from "@/components/StatusBanner";
 import { ValidationPanel } from "@/components/ValidationPanel";
+import { ValidationRunPanel } from "@/components/ValidationRunPanel";
 import { useWorkspace } from "@/components/workspace/WorkspaceProvider";
 import { formatDuration, formatScalar, shortHash } from "@/lib/format";
 import { formatWhen } from "@/lib/investigation";
@@ -62,7 +64,7 @@ export function InvestigationOverviewView() {
   const { ws, href, isDraft } = useInvestigation();
   const schema = ws.schema;
   const result = ws.result;
-  const notRecorded = "Not recorded: DRW computes this on demand and does not store it.";
+  const onDemand = "Computed on demand under Analysis; DRW does not store it.";
 
   const baselineKind: StateKind = ws.status === "running"
     ? "running"
@@ -84,7 +86,7 @@ export function InvestigationOverviewView() {
       kind: ws.datasets.length > 0 ? "done" : "pending",
       note:
         ws.datasets.length > 0
-          ? `${ws.datasets.length} dataset(s) in this workspace (not linked to this investigation)`
+          ? `${ws.datasets.length} dataset(s) in this workspace (shared; link one under Data)`
           : "No dataset imported",
       href: href("data"),
     },
@@ -99,15 +101,35 @@ export function InvestigationOverviewView() {
       href: href("experiments"),
     },
     {
+      label: "Evaluation",
+      kind: "pending",
+      note: onDemand,
+      href: href("analysis/evaluation"),
+    },
+    {
       label: "Sensitivity (local)",
       kind: ws.sensitivity ? "done" : ws.sensitivityError ? "failed" : "pending",
       note: ws.sensitivity ? "One-at-a-time ranking computed" : (ws.sensitivityError ?? "Needs a stored run"),
       href: href("analysis/sensitivity"),
     },
-    { label: "Global sensitivity", kind: "pending", note: notRecorded, href: href("analysis/sensitivity") },
-    { label: "Identifiability", kind: "pending", note: notRecorded, href: href("analysis/identifiability") },
-    { label: "Calibration", kind: "pending", note: notRecorded, href: href("analysis/calibration") },
-    { label: "Validation", kind: "unavailable", note: "Not implemented in this version", href: href("validation") },
+    {
+      label: "Identifiability",
+      kind: "pending",
+      note: onDemand,
+      href: href("analysis/identifiability"),
+    },
+    {
+      label: "Calibration",
+      kind: "pending",
+      note: onDemand,
+      href: href("analysis/calibration"),
+    },
+    {
+      label: "Validation",
+      kind: "pending",
+      note: "Tests the frozen calibrated model on independent observations (run under Validation)",
+      href: href("validation"),
+    },
   ];
 
   const first = result?.runs[0];
@@ -163,10 +185,10 @@ export function InvestigationOverviewView() {
         <p className="drw-conclusion" data-testid="investigation-conclusion">
           Not established.
         </p>
-        <p className="drw-hint">
-          DRW does not record conclusions. A conclusion should follow from the evidence below, not
-          from this page.
-        </p>
+        <ScientificStatus level="descriptive">
+          DRW does not record conclusions. A conclusion should follow from the evidence, not from
+          this page.
+        </ScientificStatus>
       </section>
 
       <section className="drw-block" aria-labelledby="evsum-heading">
@@ -196,11 +218,11 @@ export function InvestigationOverviewView() {
             </div>
             <div>
               <dt>Calibration</dt>
-              <dd>Not recorded</dd>
+              <dd>Computed on demand (not stored)</dd>
             </div>
             <div>
               <dt>Validation</dt>
-              <dd>Not available</dd>
+              <dd>Computed on demand under Validation (not stored in the evidence package)</dd>
             </div>
           </dl>
         ) : (
@@ -712,45 +734,43 @@ export function InvestigationAnalysisView() {
 /* ----------------------------------------------------------------- validation */
 
 export function InvestigationValidationView() {
-  const { href } = useInvestigation();
-  const steps = ["Calibration data", "Calibrated model", "Independent observations", "Validation", "Generalisation and evidence"];
+  const { ws, id, href } = useInvestigation();
+  const schema = ws.schema;
   return (
     <Page
       title="Validation"
       purpose="Does it generalize to independent evidence?"
       testId="investigation-validation"
     >
-      <div className="drw-unavailable" data-testid="validation-unavailable">
-        <p className="drw-unavailable__title">
-          <StateMark kind="unavailable" /> Not implemented in this version
-        </p>
-        <p>
-          DRW does not yet validate a calibrated model against independent observations. No
-          validation results exist, and none are shown.
-        </p>
-      </div>
+      <NeedsStoredRun>
+        {schema ? (
+          <ValidationRunPanel
+            client={ws.api}
+            experimentId={id}
+            modelId={schema.model_id}
+            refreshToken={ws.datasetsRefresh}
+          />
+        ) : null}
+      </NeedsStoredRun>
 
-      <ol className="drw-flow" aria-label="Planned validation flow">
-        {steps.map((step) => (
-          <li key={step}>{step}</li>
-        ))}
-      </ol>
+      <ScientificStatus level="not_validated" testId="validation-note">
+        Validation tests a <strong>frozen</strong> calibrated model against observations that were
+        not used to fit it. Agreement, independence and any acceptance criterion are reported
+        separately; agreement here does not establish that the model is correct, and an accepted
+        threshold is a user decision rule - not scientific truth.
+      </ScientificStatus>
 
       <section className="drw-block">
-        <h2 className="drw-eyebrow">What you can do today</h2>
+        <h2 className="drw-eyebrow">What validation is not</h2>
         <ul className="drw-stack-tight">
+          <li>Not another calibration: the parameters are frozen and cannot be refit.</li>
+          <li>Not model selection, and not proof that the model is true.</li>
           <li>
-            <NavLink href={href("analysis/evaluation")} className="si-link">
-              Evaluate
-            </NavLink>{" "}
-            a stored run against an observation dataset.
-          </li>
-          <li>
+            Need a calibration first?{" "}
             <NavLink href={href("analysis/calibration")} className="si-link">
               Calibrate
             </NavLink>{" "}
-            parameters against a dataset. Without an independent dataset this shows fit, not
-            generalisation.
+            parameters and persist the result.
           </li>
         </ul>
       </section>
@@ -958,9 +978,9 @@ export function InvestigationEvidenceView() {
           <h3 className="drw-subheading">Reproducibility</h3>
           <ReproducePanel client={ws.api} experimentId={id} />
         </Step>
-        <Step title="Evaluation" state="pending" summary="Not recorded: computed on demand, not stored" />
-        <Step title="Calibration" state="pending" summary="Not recorded: computed on demand, not stored" />
-        <Step title="Validation" state="unavailable" summary="Not implemented in this version" />
+        <Step title="Evaluation" state="pending" summary="Not recorded: computed on demand under Analysis" />
+        <Step title="Calibration" state="pending" summary="Not recorded: computed on demand under Analysis" />
+        <Step title="Validation" state="pending" summary="Computed on demand under Validation" />
         <Step title="Conclusion" state="pending" summary="Not established" />
       </ol>
     </Page>

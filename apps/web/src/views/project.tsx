@@ -140,7 +140,8 @@ export function ProjectOverviewView() {
         </div>
       </div>
 
-      <ul className="drw-quick" aria-label="Project contents">
+      <h2 className="drw-eyebrow">Library</h2>
+      <ul className="drw-quick" aria-label="Project Library">
         {quick.map((item) => (
           <li key={item.label}>
             <NavLink href={item.href} className="drw-quick__item">
@@ -282,11 +283,14 @@ export function DataView({ scope }: { scope: "project" | "investigation" }) {
       title="Data"
       purpose={
         scope === "project"
-          ? "What observations exist in this workspace. Datasets are shared by all projects."
-          : "What observations we have. Datasets are shared across projects; use them in Analysis."
+          ? "The datasets in this project's Library. Datasets are shared across the workspace and can be used by any investigation."
+          : "The observations this investigation uses. Datasets are shared across the workspace; one becomes part of an investigation when you evaluate or calibrate with it."
       }
       testId="data-page"
     >
+      <p className="drw-context" data-testid="data-context">
+        {scope === "project" ? "Project · Library · Data" : "Investigation · Data"}
+      </p>
       <DatasetImportPanel client={ws.api} onImported={ws.bumpDatasets} />
       <DatasetsPanel client={ws.api} refreshToken={ws.datasetsRefresh} />
     </Page>

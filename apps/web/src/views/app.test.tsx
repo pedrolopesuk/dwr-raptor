@@ -77,7 +77,7 @@ describe("project level", () => {
     const activity = await screen.findByTestId("recent-activity");
     expect(activity).toHaveTextContent("2/2 runs");
     expect(
-      within(screen.getByRole("list", { name: "Project contents" })).getByRole("link", { name: /Experiments/ }),
+      within(screen.getByRole("list", { name: "Project Library" })).getByRole("link", { name: /Experiments/ }),
     ).toBeInTheDocument();
   });
 
@@ -198,7 +198,7 @@ describe("investigation workspace", () => {
     const state = screen.getByTestId("scientific-state");
     expect(within(state).getByRole("row", { name: /Baseline/ })).toHaveTextContent("Draft: not run");
     expect(within(state).getByRole("row", { name: /Validation/ })).toHaveTextContent(
-      "Not implemented in this version",
+      /frozen calibrated model on independent observations/,
     );
     expect(screen.getByTestId("investigation-conclusion")).toHaveTextContent("Not established");
   });
@@ -219,9 +219,9 @@ describe("investigation workspace", () => {
     expect(await screen.findByTestId("evidence-empty")).toBeInTheDocument();
 
     await user.click(within(nav).getByRole("link", { name: "Validation" }));
-    expect(await screen.findByTestId("validation-unavailable")).toHaveTextContent(
-      "Not implemented in this version",
-    );
+    // Validation needs a stored run (and a persisted calibration); the page states this plainly.
+    expect(await screen.findByTestId("needs-run")).toBeInTheDocument();
+    expect(screen.getByTestId("validation-note")).toHaveTextContent(/frozen/i);
   });
 
   it("shows the model on its own page with parameters and outputs", async () => {
@@ -265,7 +265,7 @@ describe("investigation workspace", () => {
     expect(within(chain).getByTestId("spec-hash-full")).toHaveTextContent("a".repeat(64));
     expect(within(chain).getByTestId("model-hash")).toHaveTextContent("b".repeat(64));
     expect(chain).toHaveTextContent("No dataset is linked to this experiment");
-    expect(chain).toHaveTextContent("Not implemented in this version");
+    expect(chain).toHaveTextContent("Computed on demand under Validation");
     expect(chain).toHaveTextContent("Not established");
   });
 });
@@ -484,6 +484,23 @@ describe("SI", () => {
     await user.click(screen.getByTestId("si-send"));
     expect(await screen.findByTestId("si-error")).toHaveTextContent(/no bounded numeric/);
     expect(screen.queryByTestId("si-plan")).toBeNull();
+  });
+
+  it("runs a proposal only after the engine validates it", async () => {
+    const user = userEvent.setup();
+    const run = vi.fn().mockResolvedValue(succeededData());
+    const validate = vi.fn().mockResolvedValue(okValidation);
+    renderApp(stubClient({ planExperiment: vi.fn().mockResolvedValue(proposal), run, validate }), `${INV}/draft/si`);
+    await waitFor(() => expect(screen.getByTestId("si-model")).toHaveValue("predator-prey"));
+    await user.type(screen.getByTestId("si-input"), "increase alpha by 10%");
+    await user.click(screen.getByTestId("si-send"));
+    await screen.findByTestId("si-plan");
+
+    // The explicit Run is the approval: it validates with the engine, then runs.
+    await user.click(screen.getByTestId("si-run"));
+    await waitFor(() => expect(validate).toHaveBeenCalledWith(sampleSpec));
+    await waitFor(() => expect(run).toHaveBeenCalled());
+    await waitFor(() => expect(__getPath()).toBe(`${INV}/exp-000000000000/experiments`));
   });
 
   it("toggles between SI and Manual without losing the investigation", async () => {

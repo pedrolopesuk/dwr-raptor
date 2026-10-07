@@ -211,6 +211,10 @@ body {
 }
 
 .drw-row--center {
+  align-items: flex-end;
+}
+
+.drw-row--middle {
   align-items: center;
 }
 
@@ -1520,9 +1524,23 @@ a.drw-table__link:hover {
 
 .drw-invnav {
   display: flex;
+  align-items: center;
   gap: spacing.$spacing-01;
   margin-block-start: spacing.$spacing-03;
   overflow-x: auto;
+}
+
+.drw-invnav__mode {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  margin-inline-end: spacing.$spacing-03;
+  padding-inline-end: spacing.$spacing-03;
+  border-inline-end: 1px solid var(--cds-border-subtle-01);
+  color: var(--cds-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  @include type.type-style("label-01");
 }
 
 .drw-invnav__item {
@@ -1843,4 +1861,82 @@ a.drw-table__link:hover {
   max-inline-size: 16rem;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* ------------------------------------------------- project nav: Library group */
+
+.drw-navgroup {
+  margin-block-start: spacing.$spacing-05;
+  padding-block: spacing.$spacing-02 spacing.$spacing-02;
+  padding-inline: spacing.$spacing-05;
+  color: var(--cds-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  @include type.type-style("label-01");
+}
+
+.cds--side-nav--rail .drw-navgroup {
+  opacity: 0;
+}
+
+/* --------------------------------------------- epistemic status (one system) */
+
+.drw-epistemic {
+  display: flex;
+  gap: spacing.$spacing-03;
+  align-items: baseline;
+  padding: spacing.$spacing-03 spacing.$spacing-04;
+  border: 1px solid var(--cds-border-subtle-01);
+  border-inline-start-width: 3px;
+  border-radius: $radius;
+  background: var(--cds-layer-01);
+}
+
+.drw-epistemic__tag {
+  flex: none;
+  color: var(--cds-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  @include type.type-style("label-01");
+}
+
+.drw-epistemic__text {
+  color: var(--cds-text-primary);
+  @include type.type-style("body-compact-01");
+}
+
+.drw-epistemic[data-level="descriptive"] {
+  border-inline-start-color: var(--cds-border-strong-01);
+}
+
+.drw-epistemic[data-level="limited"] {
+  border-inline-start-color: #f1c21b;
+}
+
+.drw-epistemic[data-level="not_validated"] {
+  border-inline-start-color: #ff832b;
+}
+
+.drw-epistemic[data-level="supported"] {
+  border-inline-start-color: #24a148;
+}
+
+/* Consistent baseline for rows that mix Carbon inputs and buttons. */
+.drw-row--center > .cds--form-item,
+.drw-row--center > .cds--text-input-wrapper,
+.drw-row--center > .cds--select {
+  margin-block-end: 0;
+}
+
+.drw-formgrid .cds--form-item {
+  margin-block-end: 0;
+}
+
+/* Small context line that says which navigation layer a page belongs to. */
+.drw-context {
+  margin: 0;
+  color: var(--cds-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  @include type.type-style("label-01");
 }

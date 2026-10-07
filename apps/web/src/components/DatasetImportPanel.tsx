@@ -177,7 +177,7 @@ export function DatasetImportPanel({
     <Section
       id="dataset-import-heading"
       title="Import a dataset (CSV)"
-      description="Inspect a CSV from the local workspace, assign roles/units/coordinates/uncertainty explicitly, then import one immutable, content-addressed dataset."
+      description="Inspect a CSV from the local workspace, assign roles/units/coordinates/uncertainty explicitly, then import one immutable dataset. Each dataset gets a unique fingerprint that verifies it has not changed."
     >
       <div className="drw-stack-tight" data-testid="dataset-panel">
         <p className="drw-hint" data-testid="dataset-advisory">

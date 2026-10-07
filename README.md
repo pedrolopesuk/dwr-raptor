@@ -28,7 +28,7 @@ recorded ambiguities live under [`docs/`](docs/).
 
 ```
 .
-├── apps/web/                     # Next.js research UI            (Phase 2, placeholder)
+├── apps/web/                     # Next.js researcher UI: project + investigation shell
 ├── services/
 │   ├── api/                      # FastAPI service boundary      (placeholder)
 │   ├── runner/                   # local execution service       (placeholder)
@@ -78,15 +78,19 @@ The interface is built on the **IBM Carbon Design System** (`@carbon/react`),
 with a light/dark theme toggle in the header. See
 [`docs/architecture/carbon-design-system.md`](docs/architecture/carbon-design-system.md).
 
-Choose any registered model (`oscillator`, `predator-prey`, `lorenz`) in the
-sidebar to start a new experiment, or click **Open sample project
-(predator-prey)** → validate → run → inspect
-Overview/Plots/Metrics/Sensitivity/Reproducibility → export evidence → reopen a
-saved experiment. A new experiment is seeded from a clearly-labelled
-**demonstration** configuration (+10% on the model's first input), which you
-review and adjust before validating. Projects group experiments; the optional AI
-planner proposes a spec that you must apply, validate and approve before anything
-runs.
+The UI is organised as a **project** and its **investigations**. A project has an
+Overview, Investigations, and a **Library** (Data, Models, Experiments, Evidence)
+holding everything that exists in it. An investigation is one scientific question,
+with its own contextual navigation: **SI, Overview, Model, Data, Experiments,
+Analysis, Validation, Evidence**. **SI (Scientific Intelligence)** turns a
+research question into a proposed, inspectable workflow; **Manual** is the direct
+control layer (parameters, bounds, data, mapping, objective, optimizer, budget)
+behind that proposal. Nothing executes without an explicit Run. Start from the
+sample (**Open sample project (predator-prey)**: validate → run → inspect →
+export evidence → reopen), or pick a registered model (`oscillator`,
+`predator-prey`, `lorenz`) to start a new investigation. A new investigation is
+seeded from a clearly-labelled **demonstration** configuration (+10% on the model's
+first input), which you review and adjust before validating.
 
 ```bash
 pnpm --filter @drw/web e2e        # build + Playwright/Chromium browser + accessibility tests
@@ -163,6 +167,11 @@ python -m drw sobol exp-1d700f7ad478 --factors alpha,beta --n 32 --seed 0 --work
 # Local parameter identifiability study (on-demand; runs model evaluations; read-only).
 # Local/structural only: not global identifiability, not practical (noisy-data) identifiability.
 python -m drw identifiability exp-1d700f7ad478 --factors beta,predator0 --outputs prey --workspace .drw/web-workspace
+
+# Validate a FROZEN calibration against independent datasets (read-only; no refit).
+# Separate axes: agreement / independence / (optional) acceptance. `drw validation
+# list|get|verify|staleness` inspect stored results.
+python -m drw validation run exp-1d700f7ad478 --config validation.json --persist --workspace .drw/web-workspace
 ```
 
 ## Execution, isolation and timeouts
@@ -214,10 +223,10 @@ python scripts/export_schemas.py
 
 ## What is intentionally *not* in this milestone
 
-Cloud execution, collaboration, billing, the Next.js UI, the AI planner and
-distributed queues are explicitly deferred. They are scaffolded as boundaries but
-not implemented - see the spec's section 11 (MVP scope) and section 18
-(roadmap). Nothing in this milestone should imply otherwise.
+Cloud execution, collaboration, billing and distributed queues are explicitly
+deferred. The Next.js UI and the optional AI planner **are** implemented (see
+above); see the spec's section 11 (MVP scope) and section 18 (roadmap). Nothing
+here should imply otherwise.
 
 Also deliberately out of scope for now, and **not** to be implied otherwise:
 
@@ -232,8 +241,13 @@ Also deliberately out of scope for now, and **not** to be implied otherwise:
   **local parameter identifiability** study (finite-difference sensitivity SVD;
   `drw identifiability`, `docs/methods/identifiability.md`, ADR-0015) is available
   on demand; it is **local/structural** only - not global identifiability and not
-  practical identifiability from noisy observations. **Calibration, parameter
-  fitting and observations/dataset ingestion are not implemented.**
+  practical identifiability from noisy observations. **Observations/dataset
+  ingestion** (M11; `drw dataset ...`), **model-vs-observation evaluation** (M12A),
+  **calibration** (M12B; `drw calibrate ...`) and **validation** (M12C;
+  `drw validation ...`) are implemented. Validation is an out-of-sample test of a
+  **frozen** calibration against independent observations: it cannot refit, reports
+  agreement / independence / acceptance as three separate axes, and never claims
+  the model is true.
 * **Full unit dimensional analysis.** Compound units are opaque labels (ADR-0003).
 
 ## License

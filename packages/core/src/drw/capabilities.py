@@ -44,6 +44,18 @@ def model_capabilities(schema: ModelSchema) -> dict[str, Any]:
         OBJECTIVE_METRICS,
         OPTIMIZER_NAMES,
     )
+    from drw.schema.validation import (
+        AVAILABLE_METRICS,
+        DECLARED_DIMENSIONS,
+        DEFAULT_VALIDATION_METRICS,
+        VERIFIABLE_DIMENSIONS,
+    )
+    from drw.schema.validation import (
+        DEFAULT_MAX_EVALUATIONS as VALIDATION_DEFAULT_MAX_EVALUATIONS,
+    )
+    from drw.schema.validation import (
+        DEFAULT_MAX_WALL_SECONDS as VALIDATION_DEFAULT_MAX_WALL_SECONDS,
+    )
 
     numeric = [p for p in schema.parameters if p.type in ("float", "int")]
     factorable = [p for p in numeric if p.has_bounds()]
@@ -105,6 +117,19 @@ def model_capabilities(schema: ModelSchema) -> dict[str, Any]:
             "default_max_wall_seconds": 600.0,
             "identifiability_modes": ["off", "warn", "require"],
             "supported_parameter_types": ["float"],
+        },
+        # Authoritative validation configuration (single source: drw.schema.validation).
+        # Additive; the core remains the enforcement point. Validation executes no
+        # model itself and never contains an optimizer.
+        "validation": {
+            "default_metrics": list(DEFAULT_VALIDATION_METRICS),
+            "metrics": list(AVAILABLE_METRICS),
+            "independence_checks": list(VERIFIABLE_DIMENSIONS + DECLARED_DIMENSIONS),
+            "verifiable_dimensions": list(VERIFIABLE_DIMENSIONS),
+            "declared_dimensions": list(DECLARED_DIMENSIONS),
+            "default_max_evaluations": VALIDATION_DEFAULT_MAX_EVALUATIONS,
+            "default_max_wall_seconds": VALIDATION_DEFAULT_MAX_WALL_SECONDS,
+            "report_gap_default": True,
         },
         "limitations": limitations,
     }

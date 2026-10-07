@@ -129,6 +129,7 @@ export interface Workspace {
   createProject: (name: string) => Promise<void>;
   selectProject: (projectId: string) => void;
   reviewProposal: (spec: ExperimentSpec, modelId: string) => Promise<void>;
+  runProposal: (spec: ExperimentSpec, modelId: string) => Promise<void>;
 
   plannerNote: PlannerStatus | null;
   conversation: (investigationId: string) => { messages: SiMessage[]; busy: boolean };
@@ -449,77 +450,108 @@ export function WorkspaceProvider({
     }
   }, [api, clearError, describeError, spec]);
 
+  const performRun = useCallback(
+    async (runSpec: ExperimentSpec): Promise<void> => {
+      const controller = new AbortController();
+      abortRef.current = controller;
+      const jobId = newJobId();
+      setJobStatus(null);
+      setStatus("running");
+      setDetail("starting...");
+      clearError();
+      resetOutcome();
+
+      const timer = window.setInterval(() => {
+        void (async () => {
+          try {
+            setJobStatus(await api.jobStatus(jobId));
+          } catch {
+            /* progress is best-effort; the run request is authoritative */
+          }
+        })();
+      }, 700);
+
+      try {
+        const data = await api.run(runSpec, { signal: controller.signal, projectId, jobId });
+        const derived = statusFromResult(data);
+        setResult(data);
+        setStatus(derived);
+        setActiveId(data.experiment_id);
+        setReopened(false);
+        const failed = data.runs.filter((record) => record.status !== "succeeded");
+        setDetail(
+          derived === "succeeded"
+            ? `${data.comparisons.length} comparison(s) from ${data.runs.length} run(s)`
+            : failed.flatMap((record) => runIssues(record)).join("; ") || "run incomplete",
+        );
+        // The investigation now has a stored identity; carry its SI thread across.
+        setThreads((current) => {
+          const draft = current[DRAFT_ID];
+          if (!draft) return current;
+          const { [DRAFT_ID]: _moved, ...rest } = current;
+          return { ...rest, [data.experiment_id]: [...(rest[data.experiment_id] ?? []), ...draft] };
+        });
+        router.replace(paths.investigation(projectId, data.experiment_id, "experiments"));
+        await refreshExperiments(projectId);
+        await loadEnvironment();
+        void loadSensitivity(data.experiment_id);
+      } catch (error) {
+        if (error instanceof ApiError && error.code === "cancelled") {
+          setStatus("cancelled");
+          setDetail("stopped by the researcher");
+        } else {
+          describeError(error);
+          setStatus("failed");
+          setDetail(error instanceof Error ? error.message : "run failed");
+        }
+      } finally {
+        window.clearInterval(timer);
+        abortRef.current = null;
+      }
+    },
+    [
+      api,
+      clearError,
+      describeError,
+      loadEnvironment,
+      loadSensitivity,
+      projectId,
+      refreshExperiments,
+      resetOutcome,
+      router,
+    ],
+  );
+
   const run = useCallback(async (): Promise<void> => {
     if (!spec || !validation?.ok) return;
-    const controller = new AbortController();
-    abortRef.current = controller;
-    const jobId = newJobId();
-    setJobStatus(null);
-    setStatus("running");
-    setDetail("starting...");
-    clearError();
-    resetOutcome();
+    await performRun(spec);
+  }, [performRun, spec, validation]);
 
-    const timer = window.setInterval(() => {
-      void (async () => {
-        try {
-          setJobStatus(await api.jobStatus(jobId));
-        } catch {
-          /* progress is best-effort; the run request is authoritative */
+  /** Stages an SI proposal into Manual, validates it, and runs it only if valid. */
+  const runProposal = useCallback(
+    async (next: ExperimentSpec, modelId: string): Promise<void> => {
+      clearError();
+      try {
+        const described = await api.describeModel(modelId);
+        openDraft(next, described.schema, described.model_hash, null);
+        setSelectedModelId(modelId);
+        const outcome = await api.validate(next);
+        setValidation(outcome);
+        if (!outcome.ok) {
+          setDetail(
+            "SI proposal loaded into Manual; the engine found problems - correct them before running",
+          );
+          router.push(paths.investigation(projectId, DRAFT_ID, "experiments/configure"));
+          return;
         }
-      })();
-    }, 700);
-
-    try {
-      const data = await api.run(spec, { signal: controller.signal, projectId, jobId });
-      const derived = statusFromResult(data);
-      setResult(data);
-      setStatus(derived);
-      setActiveId(data.experiment_id);
-      setReopened(false);
-      const failed = data.runs.filter((record) => record.status !== "succeeded");
-      setDetail(
-        derived === "succeeded"
-          ? `${data.comparisons.length} comparison(s) from ${data.runs.length} run(s)`
-          : failed.flatMap((record) => runIssues(record)).join("; ") || "run incomplete",
-      );
-      // The investigation now has a stored identity; carry its SI thread across.
-      setThreads((current) => {
-        const draft = current[DRAFT_ID];
-        if (!draft) return current;
-        const { [DRAFT_ID]: _moved, ...rest } = current;
-        return { ...rest, [data.experiment_id]: [...(rest[data.experiment_id] ?? []), ...draft] };
-      });
-      router.replace(paths.investigation(projectId, data.experiment_id, "experiments"));
-      await refreshExperiments(projectId);
-      await loadEnvironment();
-      void loadSensitivity(data.experiment_id);
-    } catch (error) {
-      if (error instanceof ApiError && error.code === "cancelled") {
-        setStatus("cancelled");
-        setDetail("stopped by the researcher");
-      } else {
+        await performRun(next);
+      } catch (error) {
         describeError(error);
         setStatus("failed");
-        setDetail(error instanceof Error ? error.message : "run failed");
       }
-    } finally {
-      window.clearInterval(timer);
-      abortRef.current = null;
-    }
-  }, [
-    api,
-    clearError,
-    describeError,
-    loadEnvironment,
-    loadSensitivity,
-    projectId,
-    refreshExperiments,
-    resetOutcome,
-    router,
-    spec,
-    validation,
-  ]);
+    },
+    [api, clearError, describeError, openDraft, performRun, projectId, router],
+  );
 
   const cancel = useCallback(() => abortRef.current?.abort(), []);
 
@@ -681,6 +713,7 @@ export function WorkspaceProvider({
     createProject,
     selectProject,
     reviewProposal,
+    runProposal,
     plannerNote,
     conversation,
     ask,

@@ -249,6 +249,47 @@ def build_parser() -> argparse.ArgumentParser:
     calibrate.add_argument("--json", action="store_true", dest="as_json")
     calibrate.add_argument("--workspace", default=None)
 
+    validation = sub.add_parser(
+        "validation",
+        help="validate a frozen calibration against independent datasets (read-only; no refit)",
+    )
+    vsub = validation.add_subparsers(dest="validation_command", required=True)
+
+    vrun = vsub.add_parser(
+        "run",
+        help="run a validation: frozen parameters, independent datasets, M12A evaluation",
+    )
+    vrun.add_argument("experiment_id")
+    vrun.add_argument("--config", required=True, help="path to a ValidationConfig JSON file")
+    vrun.add_argument(
+        "--dry-run",
+        action="store_true",
+        dest="dry_run",
+        help="validate config, calibration, datasets, mappings and independence; execute nothing",
+    )
+    vrun.add_argument("--persist", action="store_true", help="store the validation result")
+    vrun.add_argument("--json", action="store_true", dest="as_json")
+    vrun.add_argument("--workspace", default=None)
+
+    vlist = vsub.add_parser("list", help="list stored validations")
+    vlist.add_argument("--json", action="store_true", dest="as_json")
+    vlist.add_argument("--workspace", default=None)
+
+    vget = vsub.add_parser("get", help="print a stored validation")
+    vget.add_argument("validation_id")
+    vget.add_argument("--json", action="store_true", dest="as_json")
+    vget.add_argument("--workspace", default=None)
+
+    vverify = vsub.add_parser("verify", help="verify a stored validation against its manifest")
+    vverify.add_argument("validation_id")
+    vverify.add_argument("--json", action="store_true", dest="as_json")
+    vverify.add_argument("--workspace", default=None)
+
+    vstale = vsub.add_parser("staleness", help="report whether a stored validation is still current")
+    vstale.add_argument("validation_id")
+    vstale.add_argument("--json", action="store_true", dest="as_json")
+    vstale.add_argument("--workspace", default=None)
+
     return parser
 
 
@@ -870,6 +911,157 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
     return 0 if result.best is not None else 1
 
 
+def _cmd_validation(args: argparse.Namespace) -> int:
+    from drw.calibration_store import CalibrationStore
+    from drw.dataset_store import DatasetStore, default_dataset_store
+    from drw.observations import validate_mapping
+    from drw.schema.experiment import ExperimentSpec
+    from drw.schema.validation import ValidationConfig, validate_validation_config
+    from drw.store import ExperimentStore, default_store
+    from drw.validation import validate_for_experiment
+    from drw.validation.independence import evaluate_independence
+    from drw.validation_store import (
+        ValidationStore,
+        check_validation_staleness,
+        default_validation_store,
+    )
+
+    command = getattr(args, "validation_command", None)
+    workspace = args.workspace
+
+    if command in ("list", "get", "verify", "staleness"):
+        vstore = ValidationStore(workspace) if workspace else default_validation_store()
+        if command == "list":
+            refs = vstore.list()
+            if args.as_json:
+                print(dumps_pretty([ref.model_dump(mode="json") for ref in refs]))
+            else:
+                for ref in refs:
+                    print(
+                        f"{ref.validation_id}  {ref.agreement_status:<12} "
+                        f"exp={ref.experiment_id}"
+                    )
+            return 0
+        if command == "get":
+            ref = vstore.ref(args.validation_id)
+            result = vstore.load(args.validation_id)
+            if args.as_json:
+                payload = result.model_dump(mode="json")
+                payload["validation_id"] = ref.validation_id
+                print(dumps_pretty(payload))
+            else:
+                print(
+                    f"{ref.validation_id}  agreement={result.agreement_status}  "
+                    f"acceptance={result.acceptance_status}  "
+                    f"independence={result.independence_status}"
+                )
+                for item in result.datasets:
+                    print(f"  {item.label or item.dataset.dataset_id}: {item.metrics}")
+            return 0
+        if command == "verify":
+            report = vstore.verify(args.validation_id)
+            if args.as_json:
+                print(dumps_pretty(report.model_dump(mode="json")))
+            else:
+                for check in report.checks:
+                    print(f"[{check.status.upper()}] {check.name}: {check.message}")
+            return 0 if report.ok else 1
+        result = vstore.load(args.validation_id)
+        staleness = check_validation_staleness(
+            result,
+            calibration_store=CalibrationStore(vstore.root),
+            dataset_store=DatasetStore(vstore.root),
+        )
+        if args.as_json:
+            print(dumps_pretty(staleness.model_dump(mode="json")))
+        else:
+            print(f"{staleness.validation_id}: {'fresh' if staleness.fresh else 'stale'}")
+            for reason in staleness.reasons:
+                print(f"  - {reason}")
+        return 0 if staleness.fresh else 1
+
+    store = ExperimentStore(workspace) if workspace else default_store()
+    datasets = DatasetStore(workspace) if workspace else default_dataset_store()
+
+    try:
+        raw_config = json.loads(Path(args.config).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"could not read validation config {args.config!r}: {exc}") from exc
+    config = ValidationConfig.model_validate(raw_config)
+    # The command-line experiment id is authoritative.
+    config = config.model_copy(update={"experiment_id": args.experiment_id})
+
+    loaded = store.load(args.experiment_id)
+    spec = ExperimentSpec.model_validate(loaded["spec"])
+    schema = build_model(spec.model_ref.model_id).describe()
+    calibration = CalibrationStore(store.root).load(config.calibration.calibration_id)
+
+    if args.dry_run:
+        diagnostics = list(
+            validate_validation_config(config, schema, calibration, dict(spec.baseline))
+        )
+        calibration_dataset = datasets.load(calibration.config.dataset.dataset_id)
+        reports = []
+        for item in config.datasets:
+            dataset = datasets.load(item.dataset.dataset_id)
+            diagnostics.extend(validate_mapping(item.mapping, dataset=dataset, schema=schema))
+            reports.append(
+                (
+                    item,
+                    evaluate_independence(
+                        item.independence, calibration_dataset, dataset, item.mapping
+                    ),
+                )
+            )
+        if not diagnostics:
+            print("no diagnostics: validation is ready to run")
+        for diagnostic in diagnostics:
+            print(f"[{diagnostic.level.upper()}] {diagnostic.code}: {diagnostic.message}")
+        for item, report in reports:
+            label = item.label or item.dataset.dataset_id
+            print(f"dataset {label}: independence={report.status} ({report.note})")
+        print(
+            f"dry run: datasets={len(config.datasets)} "
+            f"budget={config.budget.max_evaluations} metrics={list(config.evaluation.metrics)}"
+        )
+        print("dry run: no model runs were executed")
+        return 2 if any(d.level == "error" for d in diagnostics) else 0
+
+    result = validate_for_experiment(args.experiment_id, store, config)
+    ref = ValidationStore(store.root).save(result) if args.persist else None
+
+    if args.as_json:
+        payload = result.model_dump(mode="json")
+        if ref is not None:
+            payload["validation_id"] = ref.validation_id
+        print(dumps_pretty(payload))
+    else:
+        print(
+            f"experiment: {result.experiment_id}  agreement: {result.agreement_status}  "
+            f"acceptance: {result.acceptance_status}  independence: {result.independence_status}"
+        )
+        print(
+            f"datasets: {len(result.datasets)}  evaluations: {result.evaluations_completed} "
+            f"(cap {result.evaluations_requested})  wall: {result.wall_seconds:.3f}s"
+        )
+        for item in result.datasets:
+            label = item.label or item.dataset.dataset_id
+            metrics = ", ".join(
+                f"{key}={value:.6g}" if value is not None else f"{key}=n/a"
+                for key, value in item.metrics.items()
+            )
+            print(
+                f"  [{item.failure or item.agreement}] {label}: {metrics or 'no metrics'}  "
+                f"independence={item.independence.status}"
+            )
+        for diagnostic in result.diagnostics:
+            print(f"[{diagnostic.level.upper()}] {diagnostic.code}: {diagnostic.message}")
+        if ref is not None:
+            print(f"stored validation: {ref.validation_id}")
+        print(f"note: {result.note}")
+    return 0 if any(item.agreement == "evaluated" for item in result.datasets) else 1
+
+
 _COMMANDS = {
     "list-models": _cmd_list_models,
     "describe": _cmd_describe,
@@ -885,6 +1077,7 @@ _COMMANDS = {
     "dataset": _cmd_dataset,
     "evaluate": _cmd_evaluate,
     "calibrate": _cmd_calibrate,
+    "validation": _cmd_validation,
 }
 
 
